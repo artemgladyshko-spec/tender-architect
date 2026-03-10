@@ -1,0 +1,6 @@
+node_modules
+.env
+a-inputs
+a-process/analysis
+a-process/actors
+a-process/pbs
