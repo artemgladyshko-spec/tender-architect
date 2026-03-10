@@ -1,88 +1,58 @@
-Tender Generation Workflow
-
 Step 1 — Analyze tender documentation
 
-Inputs:
-- ToR
-- annexes
-- contracts
-- deadlines
-- NFR
+Step 2 — Detect actors
 
-Outputs:
-a-process/analysis
+Output:
+a-process/actors
 
-Extract:
-
-- functional requirements
-- non functional requirements
-- constraints
-- integrations
-- deadlines
-- deliverables
-
-
-Step 2 — Generate PBS
+Step 2 — Detect architecture patterns
 
 Input:
-requirements analysis
+a-process/analysis/requirements.md
+
+Prompt:
+a-process/prompts/architecture_pattern_detector.md
+
+Output:
+a-process/analysis/architecture_patterns.md
+
+Step 3 — Generate PBS
+
+Input:
+requirements + actors
 
 Output:
 a-process/pbs
 
-Generate:
-
-- subsystem list
-- dependency structure
-
-
-Step 3 — Generate domain model
+Step 4 — Generate UI prototype
 
 Input:
-PBS + UI prototype
+PBS
+
+Output:
+a-process/prototype
+
+Step 5 — Generate domain model
+
+Input:
+PBS + prototype + actors
 
 Output:
 a-process/domain_model
 
-Generate:
+Step 6 — Generate architecture
 
-- entities
-- actors
-- user flows
+Step 7 — Generate database design
 
+Step 8 — Generate API design
 
-Step 4 — Generate architecture
-
-Output:
-a-process/architecture
-
-Generate:
-
-- system architecture
-- frontend architecture
-- backend architecture
-- security architecture
-
-
-Step 5 — Generate database design
+Step 9 — Map non-functional requirements
 
 Output:
-a-process/database
+a-process/nfr
 
+Step 10 — Generate estimation
 
-Step 6 — Generate API design
+Step 11 — Generate traceability
 
-Output:
-a-process/api
-
-
-Step 7 — Generate estimation
-
-Output:
-a-process/estimation
-
-
-Step 8 — Generate final proposal
-
-Output:
-ab-outcome/proposal
+Step 12 — Generate final proposal
