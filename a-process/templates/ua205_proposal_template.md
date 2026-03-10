@@ -1,132 +1,107 @@
-# ТЕХНІЧНА ПРОПОЗИЦІЯ
+# System Architecture Pattern Library
 
-## 1 Загальна характеристика системи
+This document defines common architectural patterns used in enterprise information systems.
 
-Опис призначення системи, її роль у цифровій екосистемі та основні задачі, які вона вирішує.
-
----
-
-## 2 Функціональні можливості
-
-Перелік функціональних можливостей системи відповідно до технічного завдання.
-
-Основні підсистеми:
-
-- Управління користувачами
-- Управління організаціями
-- Управління ролями та доступом
-- Журнал аудиту
-- Центр сповіщень
-- Інтеграційний шлюз
-- Управління модулями
+The tender analysis process must detect these patterns from requirements and incorporate them into the architecture.
 
 ---
 
-## 3 Архітектура рішення
+## Identity and Access Management
 
-Опис загальної архітектури системи.
+### RBAC – Role Based Access Control
 
-Архітектурні рівні:
+Indicators in requirements:
 
-UI Layer  
-Application Layer  
-Domain Layer  
-Data Layer  
-Integration Layer
+- role management
+- user roles
+- access permissions
+- role hierarchy
+- administrator role
 
----
+Architecture implications:
 
-## 4 Опис підсистем
-
-Для кожної підсистеми наводиться:
-
-- функціональне призначення
-- основні компоненти
-- взаємодія з іншими підсистемами
-- залежності
+- role entity
+- permission entity
+- role-permission mapping
+- authorization middleware
+- administrative UI for role management
 
 ---
 
-## 5 Архітектура програмного забезпечення
+### ABAC – Attribute Based Access Control
 
-Frontend архітектура  
-Backend архітектура  
-Мікросервісна або модульна структура
+Indicators:
 
----
+- contextual access control
+- attribute-based permissions
+- dynamic authorization rules
 
-## 6 Архітектура бази даних
+Architecture implications:
 
-Опис моделі даних.
-
-Основні сутності:
-
-- User
-- Organization
-- Role
-- Permission
-- AuditLog
-- Notification
-- Module
-- Integration
+- policy engine
+- attribute store
+- rule evaluation service
 
 ---
 
-## 7 API та інтеграції
+## Multitenancy
 
-REST API структура.
+Indicators:
 
-Основні інтеграції:
+- multiple organizations
+- tenant isolation
+- organization-specific data
 
-- зовнішні державні системи
-- внутрішні модулі
-- аналітичні системи
+Architecture implications:
 
----
-
-## 8 Безпека
-
-Модель безпеки:
-
-- Role Based Access Control
-- аудит доступу
-- логування дій
-- двофакторна автентифікація
+- tenant identifier
+- tenant-aware database schema
+- tenant isolation strategy
 
 ---
 
-## 9 План реалізації
+## Audit Logging
 
-Етапи реалізації системи.
+Indicators:
 
-- аналіз вимог
-- проектування архітектури
-- розробка
-- тестування
-- впровадження
+- audit trail
+- activity log
+- compliance requirements
 
----
+Architecture implications:
 
-## 10 Команда проекту
-
-Типова структура команди:
-
-- Solution Architect
-- Backend Developers
-- Frontend Developers
-- Database Engineer
-- DevOps Engineer
-- QA Engineers
-- Project Manager
+- audit log service
+- immutable event storage
+- administrative audit UI
 
 ---
 
-## 11 Кошторис
+## Notification System
 
-Оцінка трудомісткості та бюджету проекту.
+Indicators:
+
+- alerts
+- notifications
+- system messages
+
+Architecture implications:
+
+- notification service
+- delivery channels (email, SMS, push)
+- event-driven notification triggers
 
 ---
 
-## 12 Висновки
+## Integration Gateway
 
-Очікувані результати впровадження системи.
+Indicators:
+
+- external system integration
+- API interoperability
+- data exchange
+
+Architecture implications:
+
+- integration layer
+- API gateway
+- message queues or event bus
