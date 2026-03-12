@@ -46,13 +46,14 @@ const createStatusTracker = (onStatusUpdate) => {
 async function runTenderPipeline(input, options = {}) {
   const results = {};
   const documentText = input.tor || "";
+  const language = input.language === "en" ? "en" : "ua";
   const { pipelineStatus, updateStatus } = createStatusTracker(
     options.onStatusUpdate,
   );
 
   try {
     updateStatus("analyzerAgent", "running");
-    const analysis = await analyzerAgent(documentText);
+    const analysis = await analyzerAgent(documentText, language);
     results.requirements = analysis.requirements;
     results.actors = analysis.actors;
     results.patterns = analysis.architecturePatterns;
@@ -66,6 +67,7 @@ async function runTenderPipeline(input, options = {}) {
       requirements: results.requirements,
       actors: results.actors,
       architecturePatterns: results.architecturePatterns,
+      language,
     });
     updateStatus("pbsGenerator", "completed");
 
@@ -75,6 +77,7 @@ async function runTenderPipeline(input, options = {}) {
       actors: results.actors,
       architecturePatterns: results.architecturePatterns,
       pbs: results.pbs,
+      language,
     });
     results.domain = architectureOutput.domainModel;
     results.domainModel = architectureOutput.domainModel;
@@ -90,6 +93,7 @@ async function runTenderPipeline(input, options = {}) {
       architecture: results.architecture,
       api: results.api,
       database: results.database,
+      language,
     });
     updateStatus("traceabilityMapper", "completed");
 
@@ -99,6 +103,7 @@ async function runTenderPipeline(input, options = {}) {
       architecture: results.architecture,
       api: results.api,
       database: results.database,
+      language,
     });
     results.estimation = estimationOutput.raw;
     results.estimationDetails = estimationOutput;
@@ -109,6 +114,7 @@ async function runTenderPipeline(input, options = {}) {
       architecture: results.architecture,
       pbs: results.pbs,
       estimation: results.estimation,
+      language,
     });
     results.projectPlan = projectPlanOutput.raw;
     results.projectPlanDetails = projectPlanOutput;
@@ -129,6 +135,7 @@ async function runTenderPipeline(input, options = {}) {
       estimationDetails: results.estimationDetails,
       projectPlan: results.projectPlan,
       projectPlanDetails: results.projectPlanDetails,
+      language,
     });
     updateStatus("proposalAgent", "completed");
 

@@ -31,24 +31,43 @@ const extractSection = (markdown, heading) => {
   return buffer.join("\n").trim();
 };
 
-async function estimatorAgent({ pbs, architecture, api, database }) {
+const pickSection = (markdown, headings) =>
+  headings.map((heading) => extractSection(markdown, heading)).find(Boolean) || "";
+
+async function estimatorAgent({
+  pbs,
+  architecture,
+  api,
+  database,
+  language = "ua",
+}) {
   const rawEstimation = await runPrompt("estimator.md", {
     pbs,
     architecture,
     api,
     database,
+    language,
   });
 
   return {
     teamStructure:
-      extractSection(rawEstimation, "Team Structure") || rawEstimation,
+      pickSection(rawEstimation, ["Team Structure", "Структура команди"]) ||
+      rawEstimation,
     timeline:
-      extractSection(rawEstimation, "Project Timeline") ||
-      extractSection(rawEstimation, "Project Phases") ||
+      pickSection(rawEstimation, [
+        "Project Timeline",
+        "Project Phases",
+        "Графік проєкту",
+        "Етапи проєкту",
+      ]) ||
       rawEstimation,
     cost:
-      extractSection(rawEstimation, "Summary") ||
-      extractSection(rawEstimation, "Effort Estimation") ||
+      pickSection(rawEstimation, [
+        "Summary",
+        "Effort Estimation",
+        "Підсумок",
+        "Оцінка трудовитрат",
+      ]) ||
       rawEstimation,
     raw: rawEstimation,
   };

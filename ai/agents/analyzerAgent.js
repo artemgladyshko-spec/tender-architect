@@ -4,20 +4,22 @@ const mergeAnalysis = require("../document/mergeAnalysis");
 const parseSections = require("../document/parseSections");
 const runPrompt = require("../pipelines/runPrompt");
 
-async function analyzerAgent(tenderDocumentText) {
+async function analyzerAgent(tenderDocumentText, language = "ua") {
   const sections = parseSections(tenderDocumentText || "");
   const chunks = chunkDocument(sections);
-  const analysis = await analyzeChunks(chunks);
-  const requirements = mergeAnalysis(analysis);
+  const analysis = await analyzeChunks(chunks, { language });
+  const requirements = mergeAnalysis(analysis, { language });
 
   const actors = await runPrompt("actor_detector.md", {
     requirements,
+    language,
   });
 
   const architecturePatterns = await runPrompt(
     "architecture_pattern_detector.md",
     {
       requirements,
+      language,
     },
   );
 

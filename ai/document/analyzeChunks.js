@@ -52,22 +52,35 @@ const parseChunkAnalysis = (responseText) => {
     "functional requirements",
     "functional requirement",
     "system capabilities",
+    "функціональні вимоги",
+    "функціональна вимога",
+    "можливості системи",
   ]);
   const nfr = extractBucket(responseText, [
     "non-functional requirements",
     "non functional requirements",
     "quality attributes",
+    "нефункціональні вимоги",
+    "не функціональні вимоги",
+    "атрибути якості",
   ]);
   const integrations = extractBucket(responseText, [
     "external integrations",
     "integrations",
     "integration requirements",
+    "зовнішні інтеграції",
+    "інтеграції",
+    "вимоги до інтеграції",
   ]);
   const constraints = extractBucket(responseText, [
     "security requirements",
     "constraints",
     "compliance requirements",
     "architecture constraints",
+    "вимоги безпеки",
+    "обмеження",
+    "вимоги відповідності",
+    "архітектурні обмеження",
   ]);
 
   return {
@@ -103,6 +116,7 @@ async function analyzeChunks(chunks, options = {}) {
       try {
         const responseText = await runPrompt("requirements_analyzer.md", {
           chunk,
+          language: options.language || "ua",
           chunkMetadata: {
             section: chunk.section,
             page: chunk.page,

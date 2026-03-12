@@ -526,7 +526,10 @@ export default function AnalyzeTender() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ filename }),
+        body: JSON.stringify({
+          filename,
+          language: proposalLanguage,
+        }),
       });
 
       const data = await parseJsonResponse(response);
@@ -750,7 +753,7 @@ export default function AnalyzeTender() {
 
               <div className="inline-control-row">
                 <label className="inline-field" htmlFor="proposal-language">
-                  Proposal Language
+                  Output Language
                 </label>
                 <select
                   id="proposal-language"

@@ -36,6 +36,9 @@ const extractSection = (markdown, heading) => {
   return buffer.join("\n").trim();
 };
 
+const pickSection = (markdown, headings) =>
+  headings.map((heading) => extractSection(markdown, heading)).find(Boolean) || "";
+
 const buildFallbackProjectPlan = ({ architecture, pbs, estimation }) =>
   [
     "# Project Plan",
@@ -73,22 +76,32 @@ const buildFallbackProjectPlan = ({ architecture, pbs, estimation }) =>
     `Estimation summary: ${String(estimation).slice(0, 300)}`,
   ].join("\n");
 
-async function projectManagerAgent({ architecture, pbs, estimation }) {
+async function projectManagerAgent({
+  architecture,
+  pbs,
+  estimation,
+  language = "ua",
+}) {
   const rawProjectPlan = promptExists("project_manager.md")
     ? await runPrompt("project_manager.md", {
         architecture,
         pbs,
         estimation,
+        language,
       })
     : buildFallbackProjectPlan({ architecture, pbs, estimation });
 
   return {
     projectPhases:
-      extractSection(rawProjectPlan, "Project Phases") || rawProjectPlan,
-    risks: extractSection(rawProjectPlan, "Risks") || rawProjectPlan,
+      pickSection(rawProjectPlan, ["Project Phases", "Етапи проєкту"]) ||
+      rawProjectPlan,
+    risks: pickSection(rawProjectPlan, ["Risks", "Ризики"]) || rawProjectPlan,
     dependencies:
-      extractSection(rawProjectPlan, "Dependencies") || rawProjectPlan,
-    milestones: extractSection(rawProjectPlan, "Milestones") || rawProjectPlan,
+      pickSection(rawProjectPlan, ["Dependencies", "Залежності"]) ||
+      rawProjectPlan,
+    milestones:
+      pickSection(rawProjectPlan, ["Milestones", "Контрольні точки"]) ||
+      rawProjectPlan,
     raw: rawProjectPlan,
   };
 }

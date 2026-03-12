@@ -419,6 +419,10 @@ app.post("/upload-tor", (req, res, next) => {
 
 app.post("/run-analysis", asyncHandler(async (req, res) => {
   const { filename } = req.body || {};
+  const language =
+    req.body?.language === "en" || req.body?.language === "ua"
+      ? req.body.language
+      : "ua";
 
   if (!filename || typeof filename !== "string") {
     throw new HttpError(400, "filename is required");
@@ -447,7 +451,7 @@ app.post("/run-analysis", asyncHandler(async (req, res) => {
     });
 
     const results = await runTenderPipeline(
-      { tor: torText },
+      { tor: torText, language },
       {
         onStatusUpdate(entry) {
           applyPipelineStatus(entry);
@@ -459,6 +463,7 @@ app.post("/run-analysis", asyncHandler(async (req, res) => {
     latestAnalysisContext = {
       filename,
       torText,
+      language,
       analysisResults: results,
     };
     fs.writeFileSync(analysisResultsPath, JSON.stringify(results, null, 2), "utf8");

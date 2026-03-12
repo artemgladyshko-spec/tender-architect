@@ -67,7 +67,10 @@ function buildArchitectureContext(analysisResults = {}) {
     "";
 
   return {
-    systemPurpose: takeFirstSentence(requirements, "System purpose to be refined from analysis results."),
+    systemPurpose: takeFirstSentence(
+      requirements,
+      "System purpose to be refined from analysis results.",
+    ),
     stakeholders: collectItems(actors, requirements),
     actors: collectItems(actors),
     architectureStyle: takeFirstSentence(
@@ -80,7 +83,10 @@ function buildArchitectureContext(analysisResults = {}) {
     dataEntities: collectItems(domainModel),
     databases: collectItems(database),
     infrastructure: {
-      runtime: takeFirstSentence(architecture, "Application runtime to be уточнено from architecture outputs."),
+      runtime: takeFirstSentence(
+        architecture,
+        "Application runtime to be refined from architecture outputs.",
+      ),
       deploymentModel: takeFirstSentence(
         projectPlan || architecture,
         "Deployment model to be defined during technical design.",

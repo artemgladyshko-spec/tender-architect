@@ -26,21 +26,50 @@ const dedupeEntries = (entries) => {
   });
 };
 
-const renderSection = (title, entries) => {
+const LOCALIZED_STRINGS = {
+  en: {
+    documentTitle: "Requirements Analysis",
+    functionalRequirements: "Functional Requirements",
+    nonFunctionalRequirements: "Non Functional Requirements",
+    integrations: "Integrations",
+    securityRequirements: "Security Requirements",
+    constraints: "Constraints",
+    noneIdentified: "None identified",
+    section: "section",
+    page: "page",
+    chunk: "chunk",
+  },
+  ua: {
+    documentTitle: "Аналіз вимог",
+    functionalRequirements: "Функціональні вимоги",
+    nonFunctionalRequirements: "Нефункціональні вимоги",
+    integrations: "Інтеграції",
+    securityRequirements: "Вимоги безпеки",
+    constraints: "Обмеження",
+    noneIdentified: "Не виявлено",
+    section: "розділ",
+    page: "сторінка",
+    chunk: "фрагмент",
+  },
+};
+
+const renderSection = (title, entries, labels) => {
   const body = entries.length
     ? entries
         .map(
           (entry) =>
-            `- ${entry.text} (section: ${entry.section}, page: ${entry.page}, chunk: ${entry.chunkIndex})`,
+            `- ${entry.text} (${labels.section}: ${entry.section}, ${labels.page}: ${entry.page}, ${labels.chunk}: ${entry.chunkIndex})`,
         )
         .join("\n")
-    : "- None identified";
+    : `- ${labels.noneIdentified}`;
 
   return `## ${title}\n\n${body}`;
 };
 
-function mergeAnalysis(analysis) {
+function mergeAnalysis(analysis, options = {}) {
   fs.mkdirSync(analysisDir, { recursive: true });
+  const language = options.language === "en" ? "en" : "ua";
+  const labels = LOCALIZED_STRINGS[language];
 
   const merged = {
     functionalRequirements: dedupeEntries(analysis.requirements || []),
@@ -55,20 +84,29 @@ function mergeAnalysis(analysis) {
   };
 
   const markdown = [
-    "# Requirements Analysis",
-    "",
-    renderSection("Functional Requirements", merged.functionalRequirements),
+    `# ${labels.documentTitle}`,
     "",
     renderSection(
-      "Non Functional Requirements",
-      merged.nonFunctionalRequirements,
+      labels.functionalRequirements,
+      merged.functionalRequirements,
+      labels,
     ),
     "",
-    renderSection("Integrations", merged.integrations),
+    renderSection(
+      labels.nonFunctionalRequirements,
+      merged.nonFunctionalRequirements,
+      labels,
+    ),
     "",
-    renderSection("Security Requirements", merged.securityRequirements),
+    renderSection(labels.integrations, merged.integrations, labels),
     "",
-    renderSection("Constraints", merged.constraints),
+    renderSection(
+      labels.securityRequirements,
+      merged.securityRequirements,
+      labels,
+    ),
+    "",
+    renderSection(labels.constraints, merged.constraints, labels),
     "",
   ].join("\n");
 
