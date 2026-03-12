@@ -10,6 +10,24 @@ The section must include:
 4 Business objectives
 5 Regulatory and organizational context
 
-Use tables where appropriate.
+For every subsection include these blocks in this order:
+
+WHAT
+HOW
+ACTION
+OUTCOME
+
+Write this section as a technical specification, not as narrative text.
+
+Use structured subsections with clear numbering.
+
+Use tables where appropriate, especially for:
+
+* stakeholders and users
+* regulatory context
+* scope boundaries
+* business objectives and measurable outcomes
+
+Ensure ACTION contains concrete implementation or preparation steps.
 
 Write in {{language}}.

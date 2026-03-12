@@ -10,6 +10,25 @@ The section must include:
 4 Security requirements
 5 Constraints and compliance requirements
 
-Use tables where appropriate.
+For every subsection include these blocks in this order:
+
+WHAT
+HOW
+ACTION
+OUTCOME
+
+Write this section as a technical specification of enforceable system requirements.
+
+Use structured subsections with clear numbering.
+
+Use tables where appropriate, especially for:
+
+* functional requirements
+* non-functional requirements
+* integrations
+* security controls
+* compliance and constraints
+
+Ensure ACTION defines concrete implementation, configuration, validation, or enforcement steps.
 
 Write in {{language}}.

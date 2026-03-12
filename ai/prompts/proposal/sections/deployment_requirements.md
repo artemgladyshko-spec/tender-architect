@@ -11,6 +11,26 @@ The section must include:
 5 Security and access prerequisites
 6 Operational readiness
 
-Use tables where appropriate.
+For every subsection include these blocks in this order:
+
+WHAT
+HOW
+ACTION
+OUTCOME
+
+Write this section as a technical specification for deployment and production rollout.
+
+Use structured subsections with clear numbering.
+
+Use tables where appropriate, especially for:
+
+* environments
+* infrastructure prerequisites
+* deployment sequence
+* migration tasks
+* access and security prerequisites
+* operational readiness criteria
+
+Ensure ACTION defines concrete deployment, configuration, migration, and readiness steps.
 
 Write in {{language}}.

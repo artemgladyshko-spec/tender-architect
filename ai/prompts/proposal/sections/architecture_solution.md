@@ -11,6 +11,26 @@ The section must include:
 5 Data architecture
 6 Infrastructure architecture
 
-Use tables when describing components and integrations.
+For every subsection include these blocks in this order:
+
+WHAT
+HOW
+ACTION
+OUTCOME
+
+Write this section as a technical specification of the architecture implementation.
+
+Use structured subsections with clear numbering.
+
+Use tables when describing:
+
+* components
+* services
+* integrations
+* data entities and stores
+* infrastructure topology
+* security controls
+
+Ensure ACTION describes step-by-step architecture implementation activities such as defining service boundaries, APIs, deployment topology, infrastructure setup, and security mechanisms.
 
 Write in {{language}}.

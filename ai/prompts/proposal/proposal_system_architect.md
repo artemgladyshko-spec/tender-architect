@@ -28,6 +28,30 @@ Avoid marketing language.
 
 Use structured sections.
 
+For every subsection you generate you MUST include the following blocks:
+
+WHAT
+Describe what the system must provide.
+
+HOW
+Describe how the capability will be implemented.
+
+ACTION
+Provide a step-by-step implementation description.
+
+OUTCOME
+Describe the expected result of the implementation.
+
+Every section must be written as actionable technical specification content, not narrative commentary.
+
+Each subsection should:
+
+* use clear numbered headings where appropriate
+* include technical tables when they improve clarity
+* define implementation actions explicitly
+* describe services, modules, interfaces, data, infrastructure, and controls concretely
+* stay consistent with the analysis bundle and architecture outputs
+
 Use tables where appropriate.
 
 Describe the system in terms of:
