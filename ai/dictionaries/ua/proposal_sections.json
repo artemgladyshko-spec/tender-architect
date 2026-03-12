@@ -1,0 +1,13 @@
+{
+  "documentTitle": "Технічна пропозиція",
+  "sections": {
+    "general_information": "1 Загальні відомості",
+    "business_processes": "2 Робочі процеси",
+    "system_requirements": "3 Вимоги до системи",
+    "architecture_solution": "4 Архітектурне рішення",
+    "implementation_plan": "5 План реалізації",
+    "acceptance_process": "6 Контроль і приймання",
+    "deployment_requirements": "7 Вимоги до впровадження",
+    "documentation_requirements": "8 Вимоги до документації"
+  }
+}

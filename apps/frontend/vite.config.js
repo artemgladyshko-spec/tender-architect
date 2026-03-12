@@ -7,6 +7,7 @@ export default defineConfig({
     proxy: {
       "/run-analysis": "http://localhost:3001",
       "/upload-tor": "http://localhost:3001",
+      "/download-analysis": "http://localhost:3001",
       "/download-proposal": "http://localhost:3001",
     }
   },

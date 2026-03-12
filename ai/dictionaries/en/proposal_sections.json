@@ -1,0 +1,13 @@
+{
+  "documentTitle": "Technical Proposal",
+  "sections": {
+    "general_information": "1 General Information",
+    "business_processes": "2 Business Processes",
+    "system_requirements": "3 System Requirements",
+    "architecture_solution": "4 Architecture Solution",
+    "implementation_plan": "5 Implementation Plan",
+    "acceptance_process": "6 Acceptance Procedure",
+    "deployment_requirements": "7 Deployment Requirements",
+    "documentation_requirements": "8 Documentation Requirements"
+  }
+}

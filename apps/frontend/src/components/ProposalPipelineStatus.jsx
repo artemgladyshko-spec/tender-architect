@@ -5,7 +5,7 @@ const STATUS_LABELS = {
   failed: "Failed",
 };
 
-function PipelineStatusIcon({ status, index }) {
+function ProposalPipelineStatusIcon({ status, index }) {
   if (status === "completed") {
     return (
       <span className="pipeline-icon pipeline-icon-completed" aria-hidden="true">
@@ -33,21 +33,21 @@ function PipelineStatusIcon({ status, index }) {
   return <span>{index + 1}</span>;
 }
 
-export default function PipelineStatus({ pipelineSteps }) {
+export default function ProposalPipelineStatus({ proposalSteps }) {
   return (
     <div className="subpanel">
       <div className="section-heading compact">
         <div>
-          <h2>Pipeline Status</h2>
-          <p>Track each stage of the tender analysis workflow.</p>
+          <h2>Proposal Pipeline Status</h2>
+          <p>Track generation of each CMU Resolution 205 proposal section.</p>
         </div>
       </div>
 
       <div className="pipeline-list pipeline-list-horizontal">
-        {pipelineSteps.map((step, index) => (
+        {proposalSteps.map((step, index) => (
           <div className={`pipeline-item ${step.status}`} key={step.id}>
             <div className="pipeline-marker">
-              <PipelineStatusIcon index={index} status={step.status} />
+              <ProposalPipelineStatusIcon index={index} status={step.status} />
             </div>
 
             <div className="pipeline-copy">

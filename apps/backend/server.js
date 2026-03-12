@@ -9,6 +9,7 @@ require("dotenv").config();
 
 const parseDocument = require("./utils/parseDocument");
 const runTenderPipeline = require("../../ai/pipelines/runTenderPipeline");
+const runProposalPipeline = require("../../ai/pipelines/runProposalPipeline");
 const generateDocx = require("./utils/docxGenerator");
 
 const app = express();
@@ -19,8 +20,10 @@ const AI_MODE = String(process.env.MOCK_AI || "").toLowerCase() === "true"
 const rootDir = path.resolve(__dirname, "..", "..");
 const uploadDir = path.join(rootDir, "data", "inputs", "tor");
 const proposalDir = path.join(rootDir, "data", "outputs", "proposal");
+const analysisOutputDir = path.join(rootDir, "data", "outputs", "analysis");
 const markdownProposalPath = path.join(proposalDir, "technical_proposal.md");
 const docxProposalPath = path.join(proposalDir, "technical_proposal.docx");
+const analysisResultsPath = path.join(analysisOutputDir, "analysis_results.json");
 const MAX_UPLOADS_TO_KEEP = 3;
 
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx"]);
@@ -38,11 +41,25 @@ const createInitialPipelineSteps = () => ({
   project_plan: "pending",
   proposal_generation: "pending",
 });
+const createInitialProposalPipelineSteps = () => ({
+  general_information: "pending",
+  business_processes: "pending",
+  system_requirements: "pending",
+  architecture_solution: "pending",
+  implementation_plan: "pending",
+  acceptance_process: "pending",
+  deployment_requirements: "pending",
+  documentation_requirements: "pending",
+});
 
 let pipelineStepState = createInitialPipelineSteps();
+let proposalPipelineStepState = createInitialProposalPipelineSteps();
+let latestAnalysisContext = null;
+let latestProposalContext = null;
 
 fs.mkdirSync(uploadDir, { recursive: true });
 fs.mkdirSync(proposalDir, { recursive: true });
+fs.mkdirSync(analysisOutputDir, { recursive: true });
 
 class HttpError extends Error {
   constructor(statusCode, message, details) {
@@ -203,6 +220,69 @@ function applyPipelineStatus(entry) {
   }
 }
 
+function applyProposalPipelineStatus(entry) {
+  if (!entry?.section || !proposalPipelineStepState[entry.section]) {
+    return;
+  }
+
+  proposalPipelineStepState[entry.section] = entry.status;
+}
+
+function toMarkdownSection(title, value) {
+  if (value === null || value === undefined) {
+    return `## ${title}\n\nNo data available.\n`;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return `## ${title}\n\nNo data available.\n`;
+    }
+
+    if (trimmed.startsWith("#")) {
+      return `${trimmed}\n`;
+    }
+
+    return `## ${title}\n\n${trimmed}\n`;
+  }
+
+  return `## ${title}\n\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\`\n`;
+}
+
+function buildProposalMarkdown(results) {
+  const sections = [
+    "# Technical Proposal",
+    "",
+  ];
+
+  if (typeof results.proposal === "string" && results.proposal.trim()) {
+    sections.push(results.proposal.trim(), "");
+  }
+
+  sections.push(
+    toMarkdownSection("Requirements", results.requirements),
+    toMarkdownSection("Actors", results.actors),
+    toMarkdownSection("Architecture Patterns", results.architecturePatterns),
+    toMarkdownSection("Product Breakdown Structure", results.pbs),
+    toMarkdownSection("Domain Model", results.domainModel || results.domain),
+    toMarkdownSection("Architecture", results.architecture),
+    toMarkdownSection("Database", results.database),
+    toMarkdownSection("API", results.api),
+    toMarkdownSection("Traceability", results.traceability),
+    toMarkdownSection(
+      "Estimation",
+      results.estimationDetails || results.estimation,
+    ),
+    toMarkdownSection(
+      "Project Plan",
+      results.projectPlanDetails || results.projectPlan,
+    ),
+  );
+
+  return sections.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+}
+
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
@@ -253,6 +333,13 @@ app.get("/pipeline-status", (req, res) => {
   res.json({
     ok: true,
     steps: pipelineStepState,
+  });
+});
+
+app.get("/proposal-pipeline-status", (req, res) => {
+  res.json({
+    ok: true,
+    steps: proposalPipelineStepState,
   });
 });
 
@@ -369,10 +456,14 @@ app.post("/run-analysis", asyncHandler(async (req, res) => {
       }
     );
 
-    const proposalMarkdown =
-      typeof results.proposal === "string" && results.proposal.trim()
-        ? results.proposal
-        : JSON.stringify(results, null, 2);
+    latestAnalysisContext = {
+      filename,
+      torText,
+      analysisResults: results,
+    };
+    fs.writeFileSync(analysisResultsPath, JSON.stringify(results, null, 2), "utf8");
+
+    const proposalMarkdown = buildProposalMarkdown(results);
 
     deleteFileIfExists(markdownProposalPath, "replace previous markdown proposal");
     deleteFileIfExists(docxProposalPath, "replace previous docx proposal");
@@ -401,19 +492,111 @@ app.post("/run-analysis", asyncHandler(async (req, res) => {
   }
 }));
 
-app.get("/download-proposal", asyncHandler(async (req, res) => {
+app.post("/generate-proposal", asyncHandler(async (req, res) => {
+  const requestAnalysisResults = req.body?.analysisResults;
+  const requestFilename = req.body?.filename;
+  const language =
+    req.body?.language === "en" || req.body?.language === "ua"
+      ? req.body.language
+      : "ua";
+
+  const analysisResults =
+    requestAnalysisResults ||
+    latestAnalysisContext?.analysisResults;
+
+  if (!analysisResults) {
+    throw new HttpError(400, "analysisResults are required");
+  }
+
+  let torText = latestAnalysisContext?.torText || "";
+
+  if (requestFilename) {
+    const resolvedPath = path.resolve(uploadDir, requestFilename);
+
+    if (!resolvedPath.startsWith(uploadDir)) {
+      throw new HttpError(400, "Invalid filename");
+    }
+
+    if (!fs.existsSync(resolvedPath)) {
+      throw new HttpError(404, "Uploaded file not found", {
+        filename: requestFilename,
+      });
+    }
+
+    torText = await parseDocument(resolvedPath);
+  }
+
+  if (!torText) {
+    throw new HttpError(400, "TOR text is required to generate proposal");
+  }
+
+  proposalPipelineStepState = createInitialProposalPipelineSteps();
+
+  const proposalResults = await runProposalPipeline(
+    {
+      torText,
+      analysisResults,
+      language,
+    },
+    {
+      onStatusUpdate(entry) {
+        applyProposalPipelineStatus(entry);
+        log("info", "Proposal pipeline step update", entry);
+      },
+    },
+  );
+
+  latestProposalContext = proposalResults;
+
+  log("info", "Technical proposal generated successfully", {
+    language,
+    markdownProposalPath,
+    docxProposalPath,
+  });
+
+  res.json({
+    ok: true,
+    message: "Technical proposal generated",
+    results: proposalResults,
+  });
+}));
+
+const handleAnalysisDownload = asyncHandler(async (req, res) => {
+  if (!fs.existsSync(analysisResultsPath)) {
+    throw new HttpError(404, "Analysis results not generated yet");
+  }
+
+  log("info", "Downloading analysis results", {
+    route: req.originalUrl,
+    analysisResultsPath,
+  });
+
+  res.download(analysisResultsPath, "analysis_results.json", (error) => {
+    if (error && !res.headersSent) {
+      res.status(500).json(jsonError(500, "Failed to download analysis"));
+    }
+  });
+});
+
+const handleProposalDownload = asyncHandler(async (req, res) => {
   if (!fs.existsSync(docxProposalPath)) {
     throw new HttpError(404, "Proposal not generated yet");
   }
 
-  log("info", "Downloading proposal", { docxProposalPath });
+  log("info", "Downloading proposal", {
+    route: req.originalUrl,
+    docxProposalPath,
+  });
 
   res.download(docxProposalPath, "technical_proposal.docx", (error) => {
     if (error && !res.headersSent) {
       res.status(500).json(jsonError(500, "Failed to download proposal"));
     }
   });
-}));
+});
+
+app.get("/download-analysis", handleAnalysisDownload);
+app.get("/download-proposal", handleProposalDownload);
 
 app.use((req, res) => {
   res.status(404).json(jsonError(404, "Route not found", {

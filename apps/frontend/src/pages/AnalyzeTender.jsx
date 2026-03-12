@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import DownloadPanel from "../components/DownloadPanel";
 import FileDropZone from "../components/FileDropZone";
 import PipelineStatus from "../components/PipelineStatus";
+import ProposalPipelineStatus from "../components/ProposalPipelineStatus";
 import ResultsViewer from "../components/ResultsViewer";
 
 const PIPELINE_STEPS = [
@@ -26,9 +27,57 @@ const PIPELINE_STEPS = [
   { id: "project_plan", label: "Project Plan", status: "pending" },
   {
     id: "proposal_generation",
-    label: "Proposal Generation",
+    label: "Analysis Generation",
     status: "pending",
   },
+];
+
+const PROPOSAL_STEPS = [
+  {
+    id: "general_information",
+    label: "General Information",
+    status: "pending",
+  },
+  {
+    id: "business_processes",
+    label: "Business Processes",
+    status: "pending",
+  },
+  {
+    id: "system_requirements",
+    label: "System Requirements",
+    status: "pending",
+  },
+  {
+    id: "architecture_solution",
+    label: "Architecture Solution",
+    status: "pending",
+  },
+  {
+    id: "implementation_plan",
+    label: "Implementation Plan",
+    status: "pending",
+  },
+  {
+    id: "acceptance_process",
+    label: "Acceptance Procedure",
+    status: "pending",
+  },
+  {
+    id: "deployment_requirements",
+    label: "Deployment Requirements",
+    status: "pending",
+  },
+  {
+    id: "documentation_requirements",
+    label: "Documentation Requirements",
+    status: "pending",
+  },
+];
+
+const PROPOSAL_LANGUAGES = [
+  { value: "ua", label: "Ukrainian" },
+  { value: "en", label: "English" },
 ];
 
 const FILE_TYPES = [
@@ -61,6 +110,12 @@ const createInitialSteps = () =>
     status: "pending",
   }));
 
+const createInitialProposalSteps = () =>
+  PROPOSAL_STEPS.map((step) => ({
+    ...step,
+    status: "pending",
+  }));
+
 const getFileExtension = (name = "") => {
   const dotIndex = name.lastIndexOf(".");
 
@@ -84,6 +139,12 @@ const isSupportedFile = (selectedFile) => {
 
 const mapPipelineStatusToSteps = (steps = {}) =>
   PIPELINE_STEPS.map((step) => ({
+    ...step,
+    status: steps[step.id] || "pending",
+  }));
+
+const mapProposalStatusToSteps = (steps = {}) =>
+  PROPOSAL_STEPS.map((step) => ({
     ...step,
     status: steps[step.id] || "pending",
   }));
@@ -144,6 +205,12 @@ export default function AnalyzeTender() {
   const [pipelineSteps, setPipelineSteps] = useState(createInitialSteps);
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [result, setResult] = useState(null);
+  const [proposalSteps, setProposalSteps] = useState(createInitialProposalSteps);
+  const [proposalRunning, setProposalRunning] = useState(false);
+  const [proposalStatus, setProposalStatus] = useState("idle");
+  const [proposalErrorMessage, setProposalErrorMessage] = useState("");
+  const [proposalResult, setProposalResult] = useState(null);
+  const [proposalLanguage, setProposalLanguage] = useState("ua");
   const [uploadErrorMessage, setUploadErrorMessage] = useState("");
   const [analysisErrorMessage, setAnalysisErrorMessage] = useState("");
   const [backendStatus, setBackendStatus] = useState("checking");
@@ -283,7 +350,7 @@ export default function AnalyzeTender() {
         const hasFailedStep = nextPipelineSteps.some(
           (step) => step.status === "failed",
         );
-        const proposalCompleted = nextPipelineSteps.some(
+        const analysisCompleted = nextPipelineSteps.some(
           (step) =>
             step.id === "proposal_generation" && step.status === "completed",
         );
@@ -291,7 +358,7 @@ export default function AnalyzeTender() {
         if (hasFailedStep) {
           setAnalysisRunning(false);
           setAnalysisStatus("error");
-        } else if (proposalCompleted) {
+        } else if (analysisCompleted) {
           setAnalysisRunning(false);
           setAnalysisStatus("completed");
         }
@@ -301,7 +368,6 @@ export default function AnalyzeTender() {
     };
 
     pollPipelineStatus();
-
     const intervalId = window.setInterval(pollPipelineStatus, 2000);
 
     return () => {
@@ -309,6 +375,67 @@ export default function AnalyzeTender() {
       window.clearInterval(intervalId);
     };
   }, [analysisRunning]);
+
+  useEffect(() => {
+    if (!proposalRunning) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const pollProposalStatus = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/proposal-pipeline-status`, {
+          method: "GET",
+        });
+
+        if (!response.ok) {
+          throw new Error("Proposal pipeline status request failed");
+        }
+
+        const data = await parseJsonResponse(response);
+
+        if (cancelled || !data) {
+          return;
+        }
+
+        const nextProposalSteps = mapProposalStatusToSteps(data.steps);
+        setProposalSteps(nextProposalSteps);
+
+        const hasFailedStep = nextProposalSteps.some(
+          (step) => step.status === "failed",
+        );
+        const allCompleted = nextProposalSteps.every(
+          (step) => step.status === "completed",
+        );
+
+        if (hasFailedStep) {
+          setProposalRunning(false);
+          setProposalStatus("error");
+        } else if (allCompleted) {
+          setProposalRunning(false);
+          setProposalStatus("completed");
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    pollProposalStatus();
+    const intervalId = window.setInterval(pollProposalStatus, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [proposalRunning]);
+
+  const resetProposalState = () => {
+    setProposalSteps(createInitialProposalSteps());
+    setProposalStatus("idle");
+    setProposalErrorMessage("");
+    setProposalResult(null);
+  };
 
   const handleFileSelect = (selectedFile) => {
     if (!selectedFile) {
@@ -323,6 +450,7 @@ export default function AnalyzeTender() {
       setAnalysisStatus("idle");
       setAnalysisErrorMessage("");
       setPipelineSteps(createInitialSteps());
+      resetProposalState();
       setResult(null);
       return;
     }
@@ -334,6 +462,7 @@ export default function AnalyzeTender() {
     setAnalysisStatus("idle");
     setAnalysisErrorMessage("");
     setPipelineSteps(createInitialSteps());
+    resetProposalState();
     setResult(null);
   };
 
@@ -347,6 +476,7 @@ export default function AnalyzeTender() {
     setAnalysisStatus("idle");
     setAnalysisErrorMessage("");
     setPipelineSteps(createInitialSteps());
+    resetProposalState();
     setResult(null);
 
     const formData = new FormData();
@@ -381,6 +511,7 @@ export default function AnalyzeTender() {
     setAnalysisRunning(true);
     setAnalysisStatus("running");
     setAnalysisErrorMessage("");
+    resetProposalState();
     setResult(null);
     setPipelineSteps(
       PIPELINE_STEPS.map((step, index) => ({
@@ -426,6 +557,67 @@ export default function AnalyzeTender() {
     }
   };
 
+  const handleGenerateProposal = async () => {
+    if (!result) {
+      return;
+    }
+
+    setProposalRunning(true);
+    setProposalStatus("running");
+    setProposalErrorMessage("");
+    setProposalResult(null);
+    setProposalSteps(
+      PROPOSAL_STEPS.map((step, index) => ({
+        ...step,
+        status: index === 0 ? "running" : "pending",
+      })),
+    );
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/generate-proposal`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filename,
+          language: proposalLanguage,
+          analysisResults: result,
+        }),
+      });
+
+      const data = await parseJsonResponse(response);
+
+      if (!response.ok) {
+        throw new Error(
+          getErrorMessage(data, "Technical proposal generation failed"),
+        );
+      }
+
+      setProposalResult(data?.results || null);
+      setProposalSteps(
+        PROPOSAL_STEPS.map((step) => ({
+          ...step,
+          status: "completed",
+        })),
+      );
+      setProposalRunning(false);
+      setProposalStatus("completed");
+    } catch (error) {
+      console.error(error);
+      setProposalRunning(false);
+      setProposalStatus("error");
+      setProposalErrorMessage(
+        error.message || "Technical proposal generation failed",
+      );
+      setProposalSteps((currentSteps) =>
+        currentSteps.map((step) =>
+          step.status === "running" ? { ...step, status: "failed" } : step,
+        ),
+      );
+    }
+  };
+
   const selectedFile = file
     ? {
         name: file.name,
@@ -447,19 +639,31 @@ export default function AnalyzeTender() {
     idle: "Run analysis after the upload completes.",
     running: "The AI pipeline is processing the tender documentation.",
     completed: "Analysis finished successfully.",
-    error: analysisErrorMessage || "Analysis failed. Check the backend and try again.",
+    error:
+      analysisErrorMessage || "Analysis failed. Check the backend and try again.",
+  };
+
+  const proposalMessageMap = {
+    idle: "Generate the technical proposal after analysis completes.",
+    running: `The proposal pipeline is generating the final document in ${proposalLanguage.toUpperCase()}.`,
+    completed: `Technical proposal generated successfully in ${proposalLanguage.toUpperCase()}.`,
+    error:
+      proposalErrorMessage ||
+      "Technical proposal generation failed. Check the backend and try again.",
   };
 
   const statusTone =
-    uploadStatus === "error" || analysisStatus === "error" ? "error" : "neutral";
+    uploadStatus === "error" ||
+    analysisStatus === "error" ||
+    proposalStatus === "error"
+      ? "error"
+      : "neutral";
 
-  const isPipelineComplete = useMemo(
+  const isProposalComplete = useMemo(
     () =>
-      pipelineSteps.some(
-        (step) =>
-          step.id === "proposal_generation" && step.status === "completed",
-      ),
-    [pipelineSteps],
+      proposalSteps.every((step) => step.status === "completed") &&
+      proposalStatus === "completed",
+    [proposalSteps, proposalStatus],
   );
 
   return (
@@ -482,69 +686,147 @@ export default function AnalyzeTender() {
           </div>
           <div className={`mode-banner ${aiMode}`}>
             <strong>AI Mode:</strong>{" "}
-            {aiMode === "mock"
-              ? "Mock"
-              : aiMode === "live"
-                ? "Live"
-                : "Unknown"}
+            {aiMode === "mock" ? "Mock" : aiMode === "live" ? "Live" : "Unknown"}
           </div>
         </header>
 
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <h2>Upload Area</h2>
-              <p>Upload a PDF or DOCX TOR document.</p>
-            </div>
+        <div className="workspace-grid">
+          <div className="workspace-column workspace-column-left">
+            <section className="panel">
+              <div className="section-heading">
+                <div>
+                  <h2>Upload Area</h2>
+                  <p>Upload a PDF or DOCX TOR document.</p>
+                </div>
+              </div>
+
+              <FileDropZone file={selectedFile} onFileSelect={handleFileSelect} />
+            </section>
+
+            <section className="panel">
+              <div className="section-heading">
+                <div>
+                  <h2>Action Buttons</h2>
+                  <p>Upload the document, run analysis, then generate the proposal.</p>
+                </div>
+              </div>
+
+              <div className="action-row">
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={handleUpload}
+                  disabled={!file || uploadStatus === "uploading"}
+                >
+                  {uploadStatus === "uploading" ? "Uploading..." : "Upload TOR"}
+                </button>
+
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={handleRunAnalysis}
+                  disabled={
+                    uploadStatus !== "uploaded" || analysisStatus === "running"
+                  }
+                >
+                  {analysisStatus === "running" ? "Running..." : "Run Analysis"}
+                </button>
+
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={handleGenerateProposal}
+                  disabled={
+                    analysisStatus !== "completed" ||
+                    proposalStatus === "running" ||
+                    !result
+                  }
+                >
+                  {proposalStatus === "running"
+                    ? "Generating Proposal..."
+                    : "Generate Technical Proposal"}
+                </button>
+              </div>
+
+              <div className="inline-control-row">
+                <label className="inline-field" htmlFor="proposal-language">
+                  Proposal Language
+                </label>
+                <select
+                  id="proposal-language"
+                  className="inline-select"
+                  value={proposalLanguage}
+                  onChange={(event) => setProposalLanguage(event.target.value)}
+                  disabled={proposalStatus === "running"}
+                >
+                  {PROPOSAL_LANGUAGES.map((language) => (
+                    <option key={language.value} value={language.value}>
+                      {language.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className={`status-banner ${statusTone}`}>
+                <strong>Upload:</strong> {uploadMessageMap[uploadStatus]}
+                <br />
+                <strong>Analysis:</strong> {analysisMessageMap[analysisStatus]}
+                <br />
+                <strong>Proposal:</strong> {proposalMessageMap[proposalStatus]}
+              </div>
+            </section>
+
+            <section className="panel">
+              <ResultsViewer result={result} />
+            </section>
           </div>
 
-          <FileDropZone file={selectedFile} onFileSelect={handleFileSelect} />
-        </section>
+          <div className="workspace-column workspace-column-right">
+            <section className="panel">
+              <PipelineStatus pipelineSteps={pipelineSteps} />
+            </section>
 
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <h2>Action Buttons</h2>
-              <p>Upload the document first, then run the pipeline.</p>
-            </div>
+            <section className="panel">
+              <ProposalPipelineStatus proposalSteps={proposalSteps} />
+            </section>
+
+            <section className="panel">
+              <div className="subpanel">
+                <div className="section-heading compact">
+                  <div>
+                    <h2>Proposal Output</h2>
+                    <p>
+                      Generate the final technical proposal after the analysis
+                      artifacts are ready.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="empty-state">
+                  <strong>
+                    {proposalResult
+                      ? "Proposal sections generated."
+                      : "Technical proposal not generated yet."}
+                  </strong>
+                  <p>
+                    {proposalResult
+                      ? `The proposal markdown and DOCX are ready for download in ${
+                          proposalResult.language?.toUpperCase() ||
+                          proposalLanguage.toUpperCase()
+                        }.`
+                      : "Run the proposal pipeline to prepare the final technical proposal."}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <DownloadPanel
+              apiBaseUrl={API_BASE_URL}
+              isAnalysisReady={analysisStatus === "completed" && Boolean(result)}
+              isProposalReady={isProposalComplete}
+            />
           </div>
-
-          <div className="action-row">
-            <button
-              className="primary-button"
-              type="button"
-              onClick={handleUpload}
-              disabled={!file || uploadStatus === "uploading"}
-            >
-              {uploadStatus === "uploading" ? "Uploading..." : "Upload TOR"}
-            </button>
-
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={handleRunAnalysis}
-              disabled={uploadStatus !== "uploaded" || analysisStatus === "running"}
-            >
-              {analysisStatus === "running" ? "Running..." : "Run Analysis"}
-            </button>
-          </div>
-
-          <div className={`status-banner ${statusTone}`}>
-            <strong>Upload:</strong> {uploadMessageMap[uploadStatus]}
-            <br />
-            <strong>Analysis:</strong> {analysisMessageMap[analysisStatus]}
-          </div>
-        </section>
-
-        <section className="panel panel-grid">
-          <PipelineStatus pipelineSteps={pipelineSteps} />
-          <ResultsViewer result={result} />
-        </section>
-
-        <DownloadPanel
-          apiBaseUrl={API_BASE_URL}
-          isReady={isPipelineComplete}
-        />
+        </div>
       </div>
     </main>
   );
