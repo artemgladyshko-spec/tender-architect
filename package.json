@@ -7,6 +7,10 @@
     "doc": "docs"
   },
   "scripts": {
+    "postinstall": "npm --prefix apps/frontend install --include=dev",
+    "dev": "npm --prefix apps/frontend run dev",
+    "build": "npm --prefix apps/frontend run build",
+    "preview": "npm --prefix apps/frontend run preview",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
