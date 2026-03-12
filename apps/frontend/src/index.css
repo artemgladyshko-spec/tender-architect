@@ -99,6 +99,54 @@ button {
   color: #5a6b84;
 }
 
+.health-banner {
+  margin: 18px auto 0;
+  width: fit-content;
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid #dbe4f0;
+  background: #f5f8fc;
+  color: #4c5f78;
+  font-size: 0.92rem;
+}
+
+.mode-banner {
+  margin: 10px auto 0;
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid #dbe4f0;
+  background: #f5f8fc;
+  color: #4c5f78;
+  font-size: 0.86rem;
+}
+
+.health-banner.online {
+  background: #e8f7ed;
+  border-color: #cfe9d6;
+  color: #1d7a44;
+}
+
+.health-banner.offline {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #a11a2d;
+}
+
+.mode-banner.live {
+  background: #eaf2ff;
+  border-color: #c9d9ff;
+  color: #2454d4;
+}
+
+.mode-banner.mock {
+  background: #fff7e8;
+  border-color: #f7d9a4;
+  color: #9a5b00;
+}
+
 .panel {
   padding: 24px;
 }
@@ -205,6 +253,11 @@ button {
 .file-chip p {
   margin: 4px 0 0;
   color: #6b7d95;
+}
+
+.file-debug {
+  font-size: 0.82rem;
+  color: #8a9ab0;
 }
 
 .file-chip-badge,
@@ -390,10 +443,19 @@ button {
   cursor: pointer;
   padding: 16px 18px;
   font-weight: 700;
+  display: grid;
+  gap: 6px;
 }
 
 .result-panel summary::-webkit-details-marker {
   display: none;
+}
+
+.result-panel-preview {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: #70819a;
+  line-height: 1.4;
 }
 
 .result-panel pre {

@@ -13,6 +13,9 @@ const generateDocx = require("./utils/docxGenerator");
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
+const AI_MODE = String(process.env.MOCK_AI || "").toLowerCase() === "true"
+  ? "mock"
+  : "live";
 const rootDir = path.resolve(__dirname, "..", "..");
 const uploadDir = path.join(rootDir, "data", "inputs", "tor");
 const proposalDir = path.join(rootDir, "data", "outputs", "proposal");
@@ -21,10 +24,22 @@ const docxProposalPath = path.join(proposalDir, "technical_proposal.docx");
 const MAX_UPLOADS_TO_KEEP = 3;
 
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx"]);
-const ALLOWED_MIME_TYPES = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-]);
+const createInitialPipelineSteps = () => ({
+  requirements: "pending",
+  actors: "pending",
+  architecture_patterns: "pending",
+  pbs: "pending",
+  domain_model: "pending",
+  architecture_design: "pending",
+  database_design: "pending",
+  api_design: "pending",
+  traceability: "pending",
+  estimation: "pending",
+  project_plan: "pending",
+  proposal_generation: "pending",
+});
+
+let pipelineStepState = createInitialPipelineSteps();
 
 fs.mkdirSync(uploadDir, { recursive: true });
 fs.mkdirSync(proposalDir, { recursive: true });
@@ -142,6 +157,52 @@ function cleanupOldestFiles(directoryPath, filesToKeep, reason) {
   return deletedFiles;
 }
 
+function applyPipelineStatus(entry) {
+  const status = entry.status;
+
+  switch (entry.step) {
+    case "analyzerAgent":
+      pipelineStepState.requirements = status;
+      pipelineStepState.actors = status;
+      pipelineStepState.architecture_patterns = status;
+      break;
+    case "pbsGenerator":
+      pipelineStepState.pbs = status;
+      break;
+    case "architectAgent":
+      pipelineStepState.domain_model = status;
+      pipelineStepState.architecture_design = status;
+      pipelineStepState.database_design = status;
+      pipelineStepState.api_design = status;
+      break;
+    case "traceabilityMapper":
+      pipelineStepState.traceability = status;
+      break;
+    case "estimatorAgent":
+      pipelineStepState.estimation = status;
+      break;
+    case "projectManagerAgent":
+      pipelineStepState.project_plan = status;
+      break;
+    case "proposalAgent":
+      pipelineStepState.proposal_generation = status;
+      break;
+    case "pipeline":
+      if (status === "failed") {
+        const runningStep = Object.entries(pipelineStepState).find(
+          ([, value]) => value === "running",
+        )?.[0];
+
+        if (runningStep) {
+          pipelineStepState[runningStep] = "failed";
+        }
+      }
+      break;
+    default:
+      break;
+  }
+}
+
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
@@ -169,15 +230,9 @@ const upload = multer({
   },
   fileFilter(req, file, cb) {
     const ext = path.extname(file.originalname || "").toLowerCase();
-    const mimeType = (file.mimetype || "").toLowerCase();
 
     if (!ALLOWED_EXTENSIONS.has(ext)) {
       cb(new HttpError(400, "Unsupported file extension", { ext }));
-      return;
-    }
-
-    if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-      cb(new HttpError(400, "Unsupported file type", { mimeType }));
       return;
     }
 
@@ -189,19 +244,69 @@ app.get("/health", (req, res) => {
   res.json({
     ok: true,
     service: "tender-architect-backend",
+    aiMode: AI_MODE,
     timestamp: new Date().toISOString(),
   });
 });
 
+app.get("/pipeline-status", (req, res) => {
+  res.json({
+    ok: true,
+    steps: pipelineStepState,
+  });
+});
+
 app.post("/upload-tor", (req, res, next) => {
+  log("info", "Received upload request", {
+    contentType: req.headers["content-type"],
+    contentLength: req.headers["content-length"],
+    userAgent: req.headers["user-agent"],
+  });
+
   upload.single("file")(req, res, (error) => {
     if (error) {
-      next(error);
+      if (error instanceof multer.MulterError) {
+        const statusCode = error.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+
+        log("warn", "Upload rejected by multer", {
+          code: error.code,
+          message: error.message,
+        });
+
+        res.status(statusCode).json(
+          jsonError(statusCode, error.message, {
+            code: error.code,
+          })
+        );
+        return;
+      }
+
+      if (error instanceof HttpError) {
+        log("warn", "Upload rejected by validation", {
+          message: error.message,
+          details: error.details,
+        });
+
+        res.status(error.statusCode).json(
+          jsonError(error.statusCode, error.message, error.details)
+        );
+        return;
+      }
+
+      log("error", "Unexpected upload error", {
+        message: error.message,
+        stack: error.stack,
+      });
+
+      res.status(500).json(jsonError(500, "Upload failed", {
+        message: error.message,
+      }));
       return;
     }
 
     if (!req.file) {
-      next(new HttpError(400, "No file uploaded"));
+      log("warn", "Upload request completed without file");
+      res.status(400).json(jsonError(400, "No file uploaded"));
       return;
     }
 
@@ -244,6 +349,7 @@ app.post("/run-analysis", asyncHandler(async (req, res) => {
 
   log("info", "Starting analysis pipeline", { filename });
   console.time(`pipeline:${filename}`);
+  pipelineStepState = createInitialPipelineSteps();
 
   try {
     const torText = await parseDocument(resolvedPath);
@@ -257,6 +363,7 @@ app.post("/run-analysis", asyncHandler(async (req, res) => {
       { tor: torText },
       {
         onStatusUpdate(entry) {
+          applyPipelineStatus(entry);
           log("info", "Pipeline step update", entry);
         },
       }

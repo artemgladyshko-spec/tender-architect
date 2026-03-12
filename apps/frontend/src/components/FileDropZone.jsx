@@ -68,6 +68,9 @@ export default function FileDropZone({ file, onFileSelect }) {
           <div>
             <strong>{file.name}</strong>
             <p>{file.size}</p>
+            <p className="file-debug">
+              Extension: {file.extension} | MIME: {file.type}
+            </p>
           </div>
           <span className="file-chip-badge">Ready</span>
         </div>

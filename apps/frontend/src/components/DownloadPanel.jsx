@@ -1,7 +1,7 @@
-export default function DownloadPanel({ isReady }) {
+export default function DownloadPanel({ apiBaseUrl, isReady }) {
   const handleDownload = async () => {
     try {
-      const response = await fetch("/download-proposal", {
+      const response = await fetch(`${apiBaseUrl}/download-proposal`, {
         method: "GET",
       });
 
