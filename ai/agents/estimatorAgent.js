@@ -41,7 +41,7 @@ async function estimatorAgent({
   database,
   language = "ua",
 }) {
-  const rawEstimation = await runPrompt("estimator.md", {
+  const rawEstimation = await runPrompt("planning/estimator.md", {
     pbs,
     architecture,
     api,

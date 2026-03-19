@@ -1,61 +1,115 @@
-const buildArchitectureContext = require("../skills/buildArchitectureContext");
-const loadSkills = require("../skills/loadSkills");
+const buildArchitectureContext = require("../orchestration/buildArchitectureContext");
+const smartOrchestrator = require("../orchestration/smartOrchestrator");
 const runPrompt = require("../pipelines/runPrompt");
 
 async function architectAgent({
   requirements,
-  actors,
-  architecturePatterns,
+  system,
   pbs,
+  dependencies,
+  patterns = {}, // NEW
   language = "ua",
 }) {
-  const skills = loadSkills();
+  // =========================
+  // 1. ORCHESTRATION (🧠 decision layer)
+  // =========================
+  const orchestration = smartOrchestrator({
+    system: {
+      ...system,
+      patterns,
+    },
+    pbs,
+    dependencies,
+  });
+
+  const selectedSkillsText = orchestration.skills
+    .map((s) => s.content)
+    .join("\n\n");
+
+  // =========================
+  // 2. CONTEXT BUILDING
+  // =========================
   const architectureContext = buildArchitectureContext({
     requirements,
-    actors,
-    architecturePatterns,
+    system,
     pbs,
+    dependencies,
+    patterns, // NEW
   });
 
-  const domainModel = await runPrompt("domain_model_generator.md", {
+  const basePayload = {
     ...architectureContext,
-    backendArchitectureSkills: skills.backendArchitectureSkills,
-    uiArchitectureSkills: skills.uiArchitectureSkills,
-    language,
-  });
 
-  const architecture = await runPrompt("architecture_designer.md", {
-    ...architectureContext,
-    domainModel,
-    backendArchitectureSkills: skills.backendArchitectureSkills,
-    uiArchitectureSkills: skills.uiArchitectureSkills,
-    language,
-  });
+    system: JSON.stringify(system),
+    pbs: JSON.stringify(pbs),
+    dependencies: JSON.stringify(dependencies),
+    patterns: JSON.stringify(patterns), // NEW
 
-  const database = await runPrompt("database_designer.md", {
-    ...architectureContext,
-    domainModel,
-    architecture,
-    backendArchitectureSkills: skills.backendArchitectureSkills,
-    uiArchitectureSkills: skills.uiArchitectureSkills,
+    selectedSkills: selectedSkillsText,
     language,
-  });
+  };
 
-  const api = await runPrompt("api_designer.md", {
-    ...architectureContext,
-    domainModel,
-    architecture,
-    database,
-    backendArchitectureSkills: skills.backendArchitectureSkills,
-    uiArchitectureSkills: skills.uiArchitectureSkills,
-    language,
-  });
+  // =========================
+  // 3. DOMAIN MODEL
+  // =========================
+  const domainModel = await runPrompt(
+    "modeling/domain-model-generator.md",
+    basePayload
+  );
 
+  // =========================
+  // 4. ARCHITECTURE
+  // =========================
+  const architecture = await runPrompt(
+    "architecture/execution/architecture-designer.md",
+    {
+      ...basePayload,
+      domainModel,
+    }
+  );
+
+  // =========================
+  // 5. DATABASE
+  // =========================
+  const database = await runPrompt(
+    "data/database-designer.md",
+    {
+      ...basePayload,
+      domainModel,
+      architecture,
+    }
+  );
+
+  // =========================
+  // 6. API
+  // =========================
+  const api = await runPrompt(
+    "integration/api-designer.md",
+    {
+      ...basePayload,
+      domainModel,
+      architecture,
+      database,
+    }
+  );
+
+  // =========================
+  // RETURN
+  // =========================
   return {
     domainModel,
     architecture,
     database,
     api,
+
+    // IMPORTANT: explainability
+    orchestration: {
+      capabilities: orchestration.capabilities,
+      selectedSkills: orchestration.skills.map((s) => s.name),
+    },
+
+    // IMPORTANT: patterns visibility
+    patterns,
   };
 }
 

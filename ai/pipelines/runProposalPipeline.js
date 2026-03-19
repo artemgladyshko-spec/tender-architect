@@ -1,10 +1,19 @@
 const fs = require("fs");
 const path = require("path");
+
 const generateDocx = require("../../apps/backend/utils/docxGenerator");
 const loadProposalSections = require("../dictionaries/loadProposalSections");
-const buildArchitectureContext = require("../skills/buildArchitectureContext");
-const runPrompt = require("./runPrompt");
 
+// 🔥 ENGINE
+const sectionStructureAgent = require("../agents/sectionStructureAgent");
+const deepSectionBuilder = require("../core/deepSectionBuilder");
+
+// 🔥 CONSISTENCY
+const consistencyAgent = require("../agents/consistencyAgent");
+
+// =========================
+// CONFIG
+// =========================
 const SECTION_KEYS = [
   "general_information",
   "business_processes",
@@ -18,39 +27,48 @@ const SECTION_KEYS = [
 
 const rootDir = path.resolve(__dirname, "..", "..");
 const proposalOutputDir = path.join(rootDir, "data", "outputs", "proposal");
-const markdownProposalPath = path.join(proposalOutputDir, "technical_proposal.md");
-const docxProposalPath = path.join(proposalOutputDir, "technical_proposal.docx");
-const proposalPromptsDir = path.resolve(__dirname, "..", "prompts", "proposal");
+const markdownProposalPath = path.join(
+  proposalOutputDir,
+  "technical_proposal.md"
+);
+const docxProposalPath = path.join(
+  proposalOutputDir,
+  "technical_proposal.docx"
+);
 
-const readPromptFile = (relativePath) =>
-  fs.readFileSync(path.join(proposalPromptsDir, relativePath), "utf8");
-
-const normalizeAnalysisResults = (analysisResults = {}) => ({
-  ...analysisResults,
-  architecturePatterns:
-    analysisResults.architecturePatterns ||
-    analysisResults.architecture_patterns ||
-    analysisResults.patterns ||
-    "",
-  domainModel:
-    analysisResults.domainModel ||
-    analysisResults.domain_model ||
-    analysisResults.domain ||
-    "",
-  projectPlan:
-    analysisResults.projectPlan ||
-    analysisResults.project_plan ||
-    analysisResults.projectPlanDetails ||
-    "",
-});
-
+// =========================
+// HELPERS
+// =========================
 const buildSectionDefinitions = (dictionary) =>
   SECTION_KEYS.map((key) => ({
     key,
     title: dictionary.sections[key],
-    promptFile: `proposal/sections/${key}.md`,
   }));
 
+function safeParseJSON(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+// fallback якщо LLM не дав структуру
+function createFallbackStructure(title) {
+  return {
+    title,
+    items: [
+      {
+        id: "1",
+        title,
+      },
+    ],
+  };
+}
+
+// =========================
+// MARKDOWN BUILDER
+// =========================
 const buildProposalMarkdown = ({ title, sections, definitions }) =>
   [
     `# ${title}`,
@@ -58,7 +76,7 @@ const buildProposalMarkdown = ({ title, sections, definitions }) =>
     ...definitions.flatMap((definition) => [
       `## ${definition.title}`,
       "",
-      String(sections[definition.key] || "No content generated.").trim(),
+      String(sections[definition.key] || "Недостатньо даних.").trim(),
       "",
     ]),
   ]
@@ -66,84 +84,65 @@ const buildProposalMarkdown = ({ title, sections, definitions }) =>
     .replace(/\n{3,}/g, "\n\n")
     .trim() + "\n";
 
-const buildProposalReviewContext = ({
-  sectionKey,
-  sectionTitle,
-  sectionDraft,
-  architectureContext,
-  analysisResults,
-}) => ({
-  reviewObjective:
-    "Check consistency, missing architecture components, missing integrations, and security gaps. Return actionable corrections for this section draft.",
-  sectionKey,
-  sectionTitle,
-  sectionDraft,
-  architecture_context: architectureContext,
-  analysis_results: analysisResults,
-});
-
-async function generateReviewedSection({
+// =========================
+// 🔥 DEEP SECTION GENERATION
+// =========================
+async function generateSection({
   definition,
+  unifiedModel,
+  patterns,
   language,
-  torText,
-  normalizedAnalysisResults,
-  architectureContext,
-  proposalSystemArchitectPrompt,
 }) {
-  const sectionPrompt = readPromptFile(`sections/${definition.key}.md`);
-
-  const initialDraft = await runPrompt(definition.promptFile, {
+  // =========================
+  // 1. STRUCTURE
+  // =========================
+  const structureRaw = await sectionStructureAgent({
+    sectionKey: definition.key,
+    unifiedModel,
     language,
-    torText,
-    sectionTitle: definition.title,
-    architecture_context: architectureContext,
-    analysis_results: normalizedAnalysisResults,
-    proposalSystemArchitectPrompt,
-    sectionPrompt,
   });
 
-  const reviewFeedback = await runPrompt("architecture_reviewer.md", {
-    ...buildProposalReviewContext({
-      sectionKey: definition.key,
-      sectionTitle: definition.title,
-      sectionDraft: initialDraft,
-      architectureContext,
-      analysisResults: normalizedAnalysisResults,
-    }),
-  });
+  let structure = safeParseJSON(structureRaw);
 
-  return runPrompt(definition.promptFile, {
+  if (!structure || !structure.items) {
+    console.warn(
+      `⚠️ Fallback structure used for ${definition.key}`
+    );
+    structure = createFallbackStructure(definition.title);
+  }
+
+  // =========================
+  // 2. CONTENT
+  // =========================
+  return deepSectionBuilder({
+    structure,
+    unifiedModel,
+    patterns,
     language,
-    torText,
-    sectionTitle: definition.title,
-    architecture_context: architectureContext,
-    analysis_results: normalizedAnalysisResults,
-    proposalSystemArchitectPrompt,
-    sectionPrompt,
-    initialDraft,
-    reviewFeedback,
-    rewriteInstruction:
-      "Revise the section draft to resolve all review findings while preserving technical completeness and formal documentation tone.",
   });
 }
 
+// =========================
+// MAIN PIPELINE
+// =========================
 async function runProposalPipeline(
-  { analysisResults, language = "ua", torText = "" },
-  options = {},
+  { unifiedModel, language = "ua", patterns = {} },
+  options = {}
 ) {
+  if (!unifiedModel) {
+    throw new Error("unifiedModel is required for proposal generation");
+  }
+
   const dictionary = loadProposalSections(language);
-  const normalizedAnalysisResults = normalizeAnalysisResults(analysisResults);
   const definitions = buildSectionDefinitions(dictionary);
-  const proposalSystemArchitectPrompt = readPromptFile(
-    "proposal_system_architect.md",
-  );
 
-  const architectureContext = buildArchitectureContext(normalizedAnalysisResults);
-
-  const sections = {};
+  let sections = {};
 
   fs.mkdirSync(proposalOutputDir, { recursive: true });
 
+  // =========================
+  // GENERATE ALL SECTIONS
+  // =========================
   for (const definition of definitions) {
     if (typeof options.onStatusUpdate === "function") {
       options.onStatusUpdate({
@@ -154,13 +153,11 @@ async function runProposalPipeline(
     }
 
     try {
-      sections[definition.key] = await generateReviewedSection({
+      sections[definition.key] = await generateSection({
         definition,
+        unifiedModel,
+        patterns,
         language,
-        torText,
-        normalizedAnalysisResults,
-        architectureContext,
-        proposalSystemArchitectPrompt,
       });
 
       if (typeof options.onStatusUpdate === "function") {
@@ -171,6 +168,11 @@ async function runProposalPipeline(
         });
       }
     } catch (error) {
+      console.error(`Section failed: ${definition.key}`, error);
+
+      sections[definition.key] =
+        "Помилка генерації розділу. Недостатньо даних.";
+
       if (typeof options.onStatusUpdate === "function") {
         options.onStatusUpdate({
           section: definition.key,
@@ -178,11 +180,32 @@ async function runProposalPipeline(
           updatedAt: new Date().toISOString(),
         });
       }
-
-      throw error;
     }
   }
 
+  // =========================
+  // 🔥 CONSISTENCY CHECK
+  // =========================
+  try {
+    const consistencyRaw = await consistencyAgent({
+      sections,
+      unifiedModel,
+      language,
+    });
+
+    const consistency = safeParseJSON(consistencyRaw);
+
+    if (consistency?.issues?.length) {
+      console.warn("⚠️ Consistency issues detected:");
+      console.warn(consistency.issues);
+    }
+  } catch (err) {
+    console.warn("Consistency check failed (non-critical)");
+  }
+
+  // =========================
+  // FINAL DOCUMENT
+  // =========================
   const proposal = buildProposalMarkdown({
     title: dictionary.documentTitle,
     sections,
@@ -190,7 +213,12 @@ async function runProposalPipeline(
   });
 
   fs.writeFileSync(markdownProposalPath, proposal, "utf8");
-  await generateDocx(proposal, docxProposalPath);
+
+  try {
+    await generateDocx(proposal, docxProposalPath);
+  } catch (err) {
+    console.warn("DOCX generation failed (non-critical)");
+  }
 
   return {
     proposal,

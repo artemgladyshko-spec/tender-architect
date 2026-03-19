@@ -114,7 +114,7 @@ async function analyzeChunks(chunks, options = {}) {
       attempt += 1;
 
       try {
-        const responseText = await runPrompt("requirements_analyzer.md", {
+        const responseText = await runPrompt("analysis/requirements-analyzer.md", {
           chunk,
           language: options.language || "ua",
           chunkMetadata: {

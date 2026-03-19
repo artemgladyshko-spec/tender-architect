@@ -2,6 +2,8 @@ export default function DownloadPanel({
   apiBaseUrl,
   isAnalysisReady,
   isProposalReady,
+  isMarkdownReady,
+  onViewMarkdown,
 }) {
   const handleProposalDownload = async () => {
     try {
@@ -81,7 +83,16 @@ export default function DownloadPanel({
           onClick={handleProposalDownload}
           disabled={!isProposalReady}
         >
-          Download Proposal (DOCX)
+          Download DOCX
+        </button>
+
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={onViewMarkdown}
+          disabled={!isMarkdownReady}
+        >
+          View Markdown
         </button>
       </div>
     </section>

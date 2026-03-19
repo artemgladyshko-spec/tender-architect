@@ -1,34 +1,27 @@
-const analyzeChunks = require("../document/analyzeChunks");
-const chunkDocument = require("../document/chunkDocument");
-const mergeAnalysis = require("../document/mergeAnalysis");
-const parseSections = require("../document/parseSections");
 const runPrompt = require("../pipelines/runPrompt");
 
-async function analyzerAgent(tenderDocumentText, language = "ua") {
-  const sections = parseSections(tenderDocumentText || "");
-  const chunks = chunkDocument(sections);
-  const analysis = await analyzeChunks(chunks, { language });
-  const requirements = mergeAnalysis(analysis, { language });
+async function analyzerAgent(input, context = {}) {
+  const { tor } = input;
 
-  const actors = await runPrompt("actor_detector.md", {
-    requirements,
-    language,
+  const result = await runPrompt("analysis/tender-analysis-structured.md", {
+    tor,
   });
 
-  const architecturePatterns = await runPrompt(
-    "architecture_pattern_detector.md",
-    {
-      requirements,
-      language,
-    },
-  );
+  let parsed;
+
+  try {
+    parsed = JSON.parse(result);
+  } catch (e) {
+    throw new Error("AnalyzerAgent: failed to parse JSON output");
+  }
 
   return {
-    requirements,
-    actors,
-    architecturePatterns,
-    sections,
-    chunks,
+    requirements: parsed.functional_requirements || [],
+    nonFunctional: parsed.non_functional || [],
+    integrations: parsed.integrations || [],
+    actors: parsed.actors || [],
+    constraints: parsed.constraints || [],
+    raw: parsed,
   };
 }
 

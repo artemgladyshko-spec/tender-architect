@@ -1,211 +1,163 @@
 import { useEffect, useMemo, useState } from "react";
 import DownloadPanel from "../components/DownloadPanel";
 import FileDropZone from "../components/FileDropZone";
-import PipelineStatus from "../components/PipelineStatus";
-import ProposalPipelineStatus from "../components/ProposalPipelineStatus";
-import ResultsViewer from "../components/ResultsViewer";
+import PipelineBlock from "../components/pipeline/PipelineBlock";
+import StepDetailsPanel from "../components/results/StepDetailsPanel";
+import {
+  FILE_EXTENSIONS,
+  FILE_TYPES,
+  PROPOSAL_LANGUAGES,
+} from "../lib/dashboardConfig";
+import {
+  createInitialPipelineBlocks,
+  createInitialProposalSections,
+  mapEntriesToPipelineBlocks,
+  mapPipelineStatusPayload,
+  mapProposalStatusToSections,
+} from "../lib/dashboardState";
+import {
+  extractProposalMarkdown,
+  formatBytes,
+  getBackendFallbackMessage,
+  getErrorMessage,
+  getFileExtension,
+  normalizeAiMode,
+  parseJsonResponse,
+} from "../lib/dashboardUtils";
 
-const PIPELINE_STEPS = [
-  { id: "requirements", label: "Requirements Analysis", status: "pending" },
-  { id: "actors", label: "Actor Detection", status: "pending" },
-  {
-    id: "architecture_patterns",
-    label: "Architecture Patterns",
-    status: "pending",
-  },
-  { id: "pbs", label: "PBS Generation", status: "pending" },
-  { id: "domain_model", label: "Domain Model", status: "pending" },
-  {
-    id: "architecture_design",
-    label: "Architecture Design",
-    status: "pending",
-  },
-  { id: "database_design", label: "Database Design", status: "pending" },
-  { id: "api_design", label: "API Design", status: "pending" },
-  { id: "traceability", label: "Traceability Mapping", status: "pending" },
-  { id: "estimation", label: "Estimation", status: "pending" },
-  { id: "project_plan", label: "Project Plan", status: "pending" },
-  {
-    id: "proposal_generation",
-    label: "Analysis Generation",
-    status: "pending",
-  },
-];
-
-const PROPOSAL_STEPS = [
-  {
-    id: "general_information",
-    label: "General Information",
-    status: "pending",
-  },
-  {
-    id: "business_processes",
-    label: "Business Processes",
-    status: "pending",
-  },
-  {
-    id: "system_requirements",
-    label: "System Requirements",
-    status: "pending",
-  },
-  {
-    id: "architecture_solution",
-    label: "Architecture Solution",
-    status: "pending",
-  },
-  {
-    id: "implementation_plan",
-    label: "Implementation Plan",
-    status: "pending",
-  },
-  {
-    id: "acceptance_process",
-    label: "Acceptance Procedure",
-    status: "pending",
-  },
-  {
-    id: "deployment_requirements",
-    label: "Deployment Requirements",
-    status: "pending",
-  },
-  {
-    id: "documentation_requirements",
-    label: "Documentation Requirements",
-    status: "pending",
-  },
-];
-
-const PROPOSAL_LANGUAGES = [
-  { value: "ua", label: "Ukrainian" },
-  { value: "en", label: "English" },
-];
-
-const FILE_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-];
-
-const FILE_EXTENSIONS = new Set([".pdf", ".docx"]);
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
-const formatBytes = (value) => {
-  if (!value) {
-    return "0 B";
-  }
-
-  const units = ["B", "KB", "MB", "GB"];
-  const exponent = Math.min(
-    Math.floor(Math.log(value) / Math.log(1024)),
-    units.length - 1,
-  );
-  const size = value / 1024 ** exponent;
-
-  return `${size.toFixed(size >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
-};
-
-const createInitialSteps = () =>
-  PIPELINE_STEPS.map((step) => ({
-    ...step,
-    status: "pending",
-  }));
-
-const createInitialProposalSteps = () =>
-  PROPOSAL_STEPS.map((step) => ({
-    ...step,
-    status: "pending",
-  }));
-
-const getFileExtension = (name = "") => {
-  const dotIndex = name.lastIndexOf(".");
-
-  if (dotIndex === -1) {
-    return "";
-  }
-
-  return name.slice(dotIndex).toLowerCase();
-};
+const NAV_ITEMS = [
+  { id: "analysis", label: "Analysis" },
+  { id: "system_design", label: "System Design" },
+  { id: "document_engine", label: "Document Engine" },
+  { id: "results", label: "Results" },
+];
 
 const isSupportedFile = (selectedFile) => {
   if (!selectedFile) {
     return false;
   }
-
   const extension = getFileExtension(selectedFile.name);
   const mimeType = (selectedFile.type || "").toLowerCase();
-
   return FILE_EXTENSIONS.has(extension) || FILE_TYPES.includes(mimeType);
 };
 
-const mapPipelineStatusToSteps = (steps = {}) =>
-  PIPELINE_STEPS.map((step) => ({
-    ...step,
-    status: steps[step.id] || "pending",
-  }));
+const buildDocumentEngineSteps = (
+  proposalSections,
+  proposalStatus,
+  proposalResult,
+) => {
+  const completedSections = proposalSections.filter(
+    (section) => section.status === "completed",
+  ).length;
+  const hasStarted = proposalSections.some(
+    (section) => section.status !== "pending",
+  );
+  const hasRunning = proposalSections.some(
+    (section) => section.status === "running",
+  );
+  const hasFailed = proposalSections.some(
+    (section) => section.status === "failed",
+  );
+  const allCompleted =
+    proposalSections.length > 0 &&
+    proposalSections.every((section) => section.status === "completed");
 
-const mapProposalStatusToSteps = (steps = {}) =>
-  PROPOSAL_STEPS.map((step) => ({
-    ...step,
-    status: steps[step.id] || "pending",
-  }));
-
-const mapResultPipelineStatusToSteps = (pipelineStatus = []) => {
-  const mappedSteps = createInitialSteps();
-
-  pipelineStatus.forEach((entry) => {
-    switch (entry.step) {
-      case "analyzerAgent":
-        mappedSteps[0].status = entry.status;
-        mappedSteps[1].status = entry.status;
-        mappedSteps[2].status = entry.status;
-        break;
-      case "pbsGenerator":
-        mappedSteps[3].status = entry.status;
-        break;
-      case "architectAgent":
-        mappedSteps[4].status = entry.status;
-        mappedSteps[5].status = entry.status;
-        mappedSteps[6].status = entry.status;
-        mappedSteps[7].status = entry.status;
-        break;
-      case "traceabilityMapper":
-        mappedSteps[8].status = entry.status;
-        break;
-      case "estimatorAgent":
-        mappedSteps[9].status = entry.status;
-        break;
-      case "projectManagerAgent":
-        mappedSteps[10].status = entry.status;
-        break;
-      case "proposalAgent":
-        mappedSteps[11].status = entry.status;
-        break;
-      case "pipeline":
-        if (entry.status === "failed") {
-          const runningStep = mappedSteps.find((step) => step.status === "running");
-
-          if (runningStep) {
-            runningStep.status = "failed";
-          }
-        }
-        break;
-      default:
-        break;
-    }
-  });
-
-  return mappedSteps;
+  return [
+    {
+      id: "section_structure_generation",
+      label: "Section Structure Generation",
+      status: hasStarted ? "completed" : "pending",
+    },
+    {
+      id: "deep_content_generation",
+      label: "Deep Content Generation",
+      status: hasFailed
+        ? "failed"
+        : hasRunning
+          ? "running"
+          : completedSections > 0
+            ? "completed"
+            : "pending",
+    },
+    {
+      id: "consistency_check",
+      label: "Consistency Check",
+      status:
+        proposalStatus === "failed"
+          ? "failed"
+          : allCompleted
+            ? "completed"
+            : proposalStatus === "running" && completedSections > 0
+              ? "running"
+              : "pending",
+    },
+    {
+      id: "final_document_build",
+      label: "Final Document Build",
+      status:
+        proposalStatus === "failed"
+          ? "failed"
+          : proposalResult?.proposal || proposalStatus === "completed"
+            ? "completed"
+            : proposalStatus === "running" && allCompleted
+              ? "running"
+              : "pending",
+    },
+  ];
 };
 
-export default function AnalyzeTender() {
+const toArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
+
+const joinPreview = (items, fallback) => {
+  const normalized = toArray(items)
+    .flatMap((item) => toArray(item))
+    .map((item) => {
+      if (typeof item === "string") {
+        return item;
+      }
+      if (item && typeof item === "object") {
+        return item.title || item.name || item.id || JSON.stringify(item);
+      }
+      return String(item || "");
+    })
+    .filter(Boolean);
+
+  return normalized.length > 0 ? normalized.join("\n") : fallback;
+};
+
+const objectPreview = (value, fallback) => {
+  if (!value) {
+    return fallback;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return joinPreview(value, fallback);
+  }
+  return joinPreview(Object.values(value), fallback);
+};
+
+const RESULTS_STEP = {
+  id: "results_overview",
+  label: "Results Overview",
+  status: "completed",
+};
+
+function AnalyzeTender() {
   const [file, setFile] = useState(null);
   const [filename, setFilename] = useState("");
   const [uploadStatus, setUploadStatus] = useState("idle");
   const [analysisStatus, setAnalysisStatus] = useState("idle");
-  const [pipelineSteps, setPipelineSteps] = useState(createInitialSteps);
+  const [pipelineBlocks, setPipelineBlocks] = useState(createInitialPipelineBlocks);
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [result, setResult] = useState(null);
-  const [proposalSteps, setProposalSteps] = useState(createInitialProposalSteps);
+  const [proposalSections, setProposalSections] = useState(
+    createInitialProposalSections,
+  );
   const [proposalRunning, setProposalRunning] = useState(false);
   const [proposalStatus, setProposalStatus] = useState("idle");
   const [proposalErrorMessage, setProposalErrorMessage] = useState("");
@@ -215,54 +167,11 @@ export default function AnalyzeTender() {
   const [analysisErrorMessage, setAnalysisErrorMessage] = useState("");
   const [backendStatus, setBackendStatus] = useState("checking");
   const [backendStatusMessage, setBackendStatusMessage] = useState("");
-  const [aiMode, setAiMode] = useState("unknown");
-
-  const getErrorMessage = (payload, fallbackMessage) => {
-    if (!payload) {
-      return fallbackMessage;
-    }
-
-    if (typeof payload.error === "string") {
-      return payload.error;
-    }
-
-    if (typeof payload.error?.message === "string") {
-      return payload.error.message;
-    }
-
-    if (typeof payload.message === "string") {
-      return payload.message;
-    }
-
-    return fallbackMessage;
-  };
-
-  const parseJsonResponse = async (response) => {
-    const rawText = await response.text();
-
-    if (!rawText) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(rawText);
-    } catch (error) {
-      console.error("Failed to parse JSON response", error);
-      throw new Error("Server returned an invalid response.");
-    }
-  };
-
-  const getBackendFallbackMessage = (statusPayload) => {
-    if (statusPayload?.status === "offline") {
-      return (
-        statusPayload.details ||
-        statusPayload.message ||
-        `Offline at ${API_BASE_URL}`
-      );
-    }
-
-    return `Offline at ${API_BASE_URL}`;
-  };
+  const [aiMode, setAiMode] = useState({ id: "fallback", label: "Fallback" });
+  const [activeNav, setActiveNav] = useState("analysis");
+  const [expandedBlockId, setExpandedBlockId] = useState("analysis");
+  const [selectedStepId, setSelectedStepId] = useState("requirements_analysis");
+  const [detailsTab, setDetailsTab] = useState("view");
 
   useEffect(() => {
     let cancelled = false;
@@ -273,48 +182,43 @@ export default function AnalyzeTender() {
           method: "GET",
           cache: "no-store",
         });
-
         if (!response.ok) {
           throw new Error("Backend health check failed");
         }
-
         const data = await parseJsonResponse(response);
-
         if (!cancelled) {
           setBackendStatus("online");
           setBackendStatusMessage(`Connected to ${API_BASE_URL}`);
-          setAiMode(data?.aiMode || "live");
+          setAiMode(normalizeAiMode(data?.aiMode));
         }
       } catch (error) {
         console.error(error);
-
         try {
           const statusResponse = await fetch("/backend-status.json", {
             method: "GET",
             cache: "no-store",
           });
           const statusPayload = await parseJsonResponse(statusResponse);
-
           if (!cancelled) {
             setBackendStatus("offline");
-            setBackendStatusMessage(getBackendFallbackMessage(statusPayload));
-            setAiMode("unknown");
+            setBackendStatusMessage(
+              getBackendFallbackMessage(statusPayload, API_BASE_URL),
+            );
+            setAiMode(normalizeAiMode(statusPayload?.aiMode));
           }
         } catch (statusError) {
           console.error(statusError);
-
           if (!cancelled) {
             setBackendStatus("offline");
             setBackendStatusMessage(`Offline at ${API_BASE_URL}`);
-            setAiMode("unknown");
+            setAiMode(normalizeAiMode("fallback"));
           }
         }
       }
     };
 
     checkBackendHealth();
-    const intervalId = window.setInterval(checkBackendHealth, 2000);
-
+    const intervalId = window.setInterval(checkBackendHealth, 4000);
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
@@ -325,40 +229,30 @@ export default function AnalyzeTender() {
     if (!analysisRunning) {
       return undefined;
     }
-
     let cancelled = false;
 
     const pollPipelineStatus = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/pipeline-status`, {
-          method: "GET",
-        });
-
+        const response = await fetch(`${API_BASE_URL}/pipeline-status`);
         if (!response.ok) {
           throw new Error("Pipeline status request failed");
         }
-
         const data = await parseJsonResponse(response);
-
         if (cancelled || !data) {
           return;
         }
-
-        const nextPipelineSteps = mapPipelineStatusToSteps(data.steps);
-        setPipelineSteps(nextPipelineSteps);
-
-        const hasFailedStep = nextPipelineSteps.some(
-          (step) => step.status === "failed",
-        );
-        const analysisCompleted = nextPipelineSteps.some(
-          (step) =>
-            step.id === "proposal_generation" && step.status === "completed",
-        );
-
-        if (hasFailedStep) {
+        const nextBlocks = mapPipelineStatusPayload(data.steps);
+        setPipelineBlocks(nextBlocks);
+        const trackedSteps = nextBlocks
+          .filter((block) => block.id !== "document_engine")
+          .flatMap((block) => block.steps);
+        if (trackedSteps.some((step) => step.status === "failed")) {
           setAnalysisRunning(false);
-          setAnalysisStatus("error");
-        } else if (analysisCompleted) {
+          setAnalysisStatus("failed");
+        } else if (
+          trackedSteps.length &&
+          trackedSteps.every((step) => step.status === "completed")
+        ) {
           setAnalysisRunning(false);
           setAnalysisStatus("completed");
         }
@@ -369,7 +263,6 @@ export default function AnalyzeTender() {
 
     pollPipelineStatus();
     const intervalId = window.setInterval(pollPipelineStatus, 2000);
-
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
@@ -380,39 +273,27 @@ export default function AnalyzeTender() {
     if (!proposalRunning) {
       return undefined;
     }
-
     let cancelled = false;
 
     const pollProposalStatus = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/proposal-pipeline-status`, {
-          method: "GET",
-        });
-
+        const response = await fetch(`${API_BASE_URL}/proposal-pipeline-status`);
         if (!response.ok) {
           throw new Error("Proposal pipeline status request failed");
         }
-
         const data = await parseJsonResponse(response);
-
         if (cancelled || !data) {
           return;
         }
-
-        const nextProposalSteps = mapProposalStatusToSteps(data.steps);
-        setProposalSteps(nextProposalSteps);
-
-        const hasFailedStep = nextProposalSteps.some(
-          (step) => step.status === "failed",
-        );
-        const allCompleted = nextProposalSteps.every(
-          (step) => step.status === "completed",
-        );
-
-        if (hasFailedStep) {
+        const nextSections = mapProposalStatusToSections(data.steps);
+        setProposalSections(nextSections);
+        if (nextSections.some((section) => section.status === "failed")) {
           setProposalRunning(false);
-          setProposalStatus("error");
-        } else if (allCompleted) {
+          setProposalStatus("failed");
+        } else if (
+          nextSections.length &&
+          nextSections.every((section) => section.status === "completed")
+        ) {
           setProposalRunning(false);
           setProposalStatus("completed");
         }
@@ -423,7 +304,6 @@ export default function AnalyzeTender() {
 
     pollProposalStatus();
     const intervalId = window.setInterval(pollProposalStatus, 2000);
-
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
@@ -431,7 +311,7 @@ export default function AnalyzeTender() {
   }, [proposalRunning]);
 
   const resetProposalState = () => {
-    setProposalSteps(createInitialProposalSteps());
+    setProposalSections(createInitialProposalSections());
     setProposalStatus("idle");
     setProposalErrorMessage("");
     setProposalResult(null);
@@ -441,27 +321,25 @@ export default function AnalyzeTender() {
     if (!selectedFile) {
       return;
     }
-
     if (!isSupportedFile(selectedFile)) {
       setFile(null);
       setFilename("");
-      setUploadStatus("error");
+      setUploadStatus("failed");
       setUploadErrorMessage("Only PDF and DOCX files are supported.");
       setAnalysisStatus("idle");
       setAnalysisErrorMessage("");
-      setPipelineSteps(createInitialSteps());
+      setPipelineBlocks(createInitialPipelineBlocks());
       resetProposalState();
       setResult(null);
       return;
     }
-
     setFile(selectedFile);
     setFilename("");
-    setUploadStatus("selected");
+    setUploadStatus("completed");
     setUploadErrorMessage("");
     setAnalysisStatus("idle");
     setAnalysisErrorMessage("");
-    setPipelineSteps(createInitialSteps());
+    setPipelineBlocks(createInitialPipelineBlocks());
     resetProposalState();
     setResult(null);
   };
@@ -470,12 +348,11 @@ export default function AnalyzeTender() {
     if (!file) {
       return;
     }
-
-    setUploadStatus("uploading");
+    setUploadStatus("running");
     setUploadErrorMessage("");
     setAnalysisStatus("idle");
     setAnalysisErrorMessage("");
-    setPipelineSteps(createInitialSteps());
+    setPipelineBlocks(createInitialPipelineBlocks());
     resetProposalState();
     setResult(null);
 
@@ -487,18 +364,15 @@ export default function AnalyzeTender() {
         method: "POST",
         body: formData,
       });
-
       const data = await parseJsonResponse(response);
-
       if (!response.ok) {
         throw new Error(getErrorMessage(data, "Upload failed"));
       }
-
       setFilename(data?.filename || "");
-      setUploadStatus("uploaded");
+      setUploadStatus("completed");
     } catch (error) {
       console.error(error);
-      setUploadStatus("error");
+      setUploadStatus("failed");
       setUploadErrorMessage(error.message || "Upload failed");
     }
   };
@@ -507,56 +381,38 @@ export default function AnalyzeTender() {
     if (!filename) {
       return;
     }
-
     setAnalysisRunning(true);
     setAnalysisStatus("running");
     setAnalysisErrorMessage("");
     resetProposalState();
     setResult(null);
-    setPipelineSteps(
-      PIPELINE_STEPS.map((step, index) => ({
-        ...step,
-        status: index === 0 ? "running" : "pending",
-      })),
-    );
+    setPipelineBlocks(createInitialPipelineBlocks());
+    setActiveNav("analysis");
+    setExpandedBlockId("analysis");
+    setSelectedStepId("requirements_analysis");
 
     try {
       const response = await fetch(`${API_BASE_URL}/run-analysis`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          filename,
-          language: proposalLanguage,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, language: proposalLanguage }),
       });
-
       const data = await parseJsonResponse(response);
-
       if (!response.ok) {
         throw new Error(getErrorMessage(data, "Analysis failed"));
       }
-
       const nextResult = data.result || data.results;
       setResult(nextResult);
-
       if (Array.isArray(nextResult?.pipelineStatus)) {
-        setPipelineSteps(mapResultPipelineStatusToSteps(nextResult.pipelineStatus));
+        setPipelineBlocks(mapEntriesToPipelineBlocks(nextResult.pipelineStatus));
       }
-
       setAnalysisRunning(false);
       setAnalysisStatus("completed");
     } catch (error) {
       console.error(error);
       setAnalysisRunning(false);
-      setAnalysisStatus("error");
+      setAnalysisStatus("failed");
       setAnalysisErrorMessage(error.message || "Analysis failed");
-      setPipelineSteps((currentSteps) =>
-        currentSteps.map((step) =>
-          step.status === "running" ? { ...step, status: "failed" } : step,
-        ),
-      );
     }
   };
 
@@ -564,44 +420,40 @@ export default function AnalyzeTender() {
     if (!result) {
       return;
     }
-
     setProposalRunning(true);
     setProposalStatus("running");
     setProposalErrorMessage("");
     setProposalResult(null);
-    setProposalSteps(
-      PROPOSAL_STEPS.map((step, index) => ({
-        ...step,
-        status: index === 0 ? "running" : "pending",
-      })),
-    );
+    setProposalSections(createInitialProposalSections());
+    setActiveNav("document_engine");
+    setExpandedBlockId("document_engine");
+    setSelectedStepId("section_structure_generation");
 
     try {
       const response = await fetch(`${API_BASE_URL}/generate-proposal`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           filename,
           language: proposalLanguage,
           analysisResults: result,
         }),
       });
-
       const data = await parseJsonResponse(response);
-
       if (!response.ok) {
         throw new Error(
           getErrorMessage(data, "Technical proposal generation failed"),
         );
       }
-
-      setProposalResult(data?.results || null);
-      setProposalSteps(
-        PROPOSAL_STEPS.map((step) => ({
-          ...step,
+      setProposalResult(data?.results || data || null);
+      setProposalSections(
+        createInitialProposalSections().map((section) => ({
+          ...section,
           status: "completed",
+          children: section.children.map((child) => ({
+            ...child,
+            status: "completed",
+          })),
         })),
       );
       setProposalRunning(false);
@@ -609,17 +461,29 @@ export default function AnalyzeTender() {
     } catch (error) {
       console.error(error);
       setProposalRunning(false);
-      setProposalStatus("error");
+      setProposalStatus("failed");
       setProposalErrorMessage(
         error.message || "Technical proposal generation failed",
       );
-      setProposalSteps((currentSteps) =>
-        currentSteps.map((step) =>
-          step.status === "running" ? { ...step, status: "failed" } : step,
-        ),
-      );
     }
   };
+
+  const mergedPipelineBlocks = useMemo(
+    () =>
+      pipelineBlocks.map((block) =>
+        block.id === "document_engine"
+          ? {
+              ...block,
+              steps: buildDocumentEngineSteps(
+                proposalSections,
+                proposalStatus,
+                proposalResult,
+              ),
+            }
+          : block,
+      ),
+    [pipelineBlocks, proposalSections, proposalStatus, proposalResult],
+  );
 
   const selectedFile = file
     ? {
@@ -630,207 +494,485 @@ export default function AnalyzeTender() {
       }
     : null;
 
-  const uploadMessageMap = {
-    idle: "Select a PDF or DOCX file to start.",
-    selected: "File selected. Upload it to prepare the pipeline.",
-    uploading: "Uploading tender document...",
-    uploaded: "Upload finished. Analysis can now be started.",
-    error: uploadErrorMessage || "Upload failed.",
-  };
+  const uploadMessage =
+    uploadStatus === "failed"
+      ? uploadErrorMessage || "Upload failed."
+      : uploadStatus === "running"
+        ? "Uploading tender document..."
+        : filename
+          ? "Upload finished."
+          : "Select a PDF or DOCX TOR file.";
 
-  const analysisMessageMap = {
-    idle: "Run analysis after the upload completes.",
-    running: "The AI pipeline is processing the tender documentation.",
-    completed: "Analysis finished successfully.",
-    error:
-      analysisErrorMessage || "Analysis failed. Check the backend and try again.",
-  };
+  const analysisMessage =
+    analysisStatus === "failed"
+      ? analysisErrorMessage || "Analysis failed."
+      : analysisStatus === "running"
+        ? "Analysis and design are running."
+        : analysisStatus === "completed"
+          ? "Analysis completed."
+          : "Analysis is idle.";
 
-  const proposalMessageMap = {
-    idle: "Generate the technical proposal after analysis completes.",
-    running: `The proposal pipeline is generating the final document in ${proposalLanguage.toUpperCase()}.`,
-    completed: `Technical proposal generated successfully in ${proposalLanguage.toUpperCase()}.`,
-    error:
-      proposalErrorMessage ||
-      "Technical proposal generation failed. Check the backend and try again.",
-  };
+  const proposalMessage =
+    proposalStatus === "failed"
+      ? proposalErrorMessage || "Proposal generation failed."
+      : proposalStatus === "running"
+        ? "Document engine is running."
+        : proposalStatus === "completed"
+          ? "Proposal generated."
+          : "Proposal generation is idle.";
 
-  const statusTone =
-    uploadStatus === "error" ||
-    analysisStatus === "error" ||
-    proposalStatus === "error"
-      ? "error"
-      : "neutral";
-
-  const isProposalComplete = useMemo(
+  const totalTrackedSteps = useMemo(
     () =>
-      proposalSteps.every((step) => step.status === "completed") &&
-      proposalStatus === "completed",
-    [proposalSteps, proposalStatus],
+      mergedPipelineBlocks.flatMap((block) => block.steps).length +
+      proposalSections.flatMap((section) => section.children).length,
+    [mergedPipelineBlocks, proposalSections],
   );
 
+  const completedTrackedSteps = useMemo(
+    () =>
+      mergedPipelineBlocks
+        .flatMap((block) => block.steps)
+        .filter((step) => step.status === "completed").length +
+      proposalSections
+        .flatMap((section) => section.children)
+        .filter((step) => step.status === "completed").length,
+    [mergedPipelineBlocks, proposalSections],
+  );
+
+  const progressPercent = totalTrackedSteps
+    ? Math.round((completedTrackedSteps / totalTrackedSteps) * 100)
+    : 0;
+
+  const proposalMarkdown = extractProposalMarkdown(proposalResult);
+
+  const resultsSummary = useMemo(
+    () => ({
+      analysis: {
+        requirements: result?.requirements,
+        actors: result?.actors,
+        patterns: result?.patterns,
+      },
+      architecture: {
+        system: result?.system,
+        pbs: result?.pbs,
+        dependencies: result?.dependencies,
+        domainModel: result?.domainModel,
+        api: result?.api,
+      },
+      proposal: proposalMarkdown,
+      consistency:
+        result?.validation?.issues ||
+        proposalResult?.consistency?.issues ||
+        proposalResult?.issues ||
+        [],
+    }),
+    [proposalMarkdown, proposalResult, result],
+  );
+
+  const detailMap = useMemo(
+    () => ({
+      requirements_analysis: {
+        title: "Requirements Analysis",
+        description: "Functional extraction and analysis output.",
+        sections: [
+          { title: "Requirements", value: result?.requirements },
+          { title: "Non-Functional", value: result?.nonFunctional },
+        ],
+        json: {
+          requirements: result?.requirements,
+          nonFunctional: result?.nonFunctional,
+        },
+        preview: joinPreview(
+          [result?.requirements, result?.nonFunctional],
+          "No requirements extracted yet.",
+        ),
+      },
+      actor_detection: {
+        title: "Actor Detection",
+        description: "Detected actors and stakeholder roles.",
+        sections: [{ title: "Actors", value: result?.actors }],
+        json: result?.actors,
+        preview: joinPreview(result?.actors, "No actors detected yet."),
+      },
+      contract_analysis: {
+        title: "Contract Analysis",
+        description: "Extracted contract constraints and milestones.",
+        sections: [{ title: "Contract", value: result?.contract }],
+        json: result?.contract,
+        preview: objectPreview(
+          result?.contract,
+          "No contract analysis output yet.",
+        ),
+      },
+      system_thinking: {
+        title: "System Thinking",
+        description: "System model derived from analysis inputs.",
+        sections: [{ title: "System", value: result?.system }],
+        json: result?.system,
+        preview: joinPreview(
+          [
+            result?.system?.purpose,
+            result?.system?.domains,
+            result?.system?.services,
+          ],
+          "No system model built yet.",
+        ),
+      },
+      pattern_detection: {
+        title: "Pattern Detection",
+        description: "Architecture patterns detected from requirements.",
+        sections: [{ title: "Patterns", value: result?.patterns }],
+        json: result?.patterns,
+        preview: joinPreview(
+          result?.patterns?.detected_patterns || result?.patterns,
+          "No architecture patterns detected yet.",
+        ),
+      },
+      pbs_generation: {
+        title: "PBS Generation",
+        description: "Product breakdown structure for the solution scope.",
+        sections: [{ title: "PBS", value: result?.pbs }],
+        json: result?.pbs,
+        preview: joinPreview(
+          result?.pbs?.modules || result?.pbs?.components || result?.pbs?.items,
+          "No PBS generated yet.",
+        ),
+      },
+      dependency_mapping: {
+        title: "Dependency Mapping",
+        description: "Cross-module and execution dependencies.",
+        sections: [{ title: "Dependencies", value: result?.dependencies }],
+        json: result?.dependencies,
+        preview: joinPreview(
+          result?.dependencies?.dependencies || result?.dependencies,
+          "No dependencies mapped yet.",
+        ),
+      },
+      domain_model: {
+        title: "Domain Model",
+        description: "Core entities and domain model outputs.",
+        sections: [{ title: "Domain Model", value: result?.domainModel }],
+        json: result?.domainModel,
+        preview: joinPreview(
+          result?.domainModel?.entities || result?.domainModel?.domains,
+          "No domain model generated yet.",
+        ),
+      },
+      architecture_design: {
+        title: "Architecture Design",
+        description: "Target architecture view and orchestration outputs.",
+        sections: [
+          { title: "Architecture", value: result?.architecture },
+          { title: "System", value: result?.system },
+        ],
+        json: result?.architecture,
+        preview: joinPreview(
+          result?.architecture?.services || result?.architecture?.components,
+          "No architecture design generated yet.",
+        ),
+      },
+      database_design: {
+        title: "Database Design",
+        description: "Persistence and storage strategy.",
+        sections: [{ title: "Database", value: result?.database }],
+        json: result?.database,
+        preview: joinPreview(
+          result?.database?.databases || result?.database?.entities,
+          "No database design generated yet.",
+        ),
+      },
+      api_design: {
+        title: "API Design",
+        description: "Integration and API surface definition.",
+        sections: [{ title: "API", value: result?.api }],
+        json: result?.api,
+        preview: joinPreview(
+          result?.api?.integrations || result?.api?.endpoints,
+          "No API design generated yet.",
+        ),
+      },
+      validation: {
+        title: "Validation",
+        description: "Consistency and validation findings for the design.",
+        sections: [{ title: "Validation", value: result?.validation }],
+        json: result?.validation,
+        preview: joinPreview(
+          result?.validation?.issues || result?.validation?.findings,
+          "No validation findings yet.",
+        ),
+      },
+      section_structure_generation: {
+        title: "Section Structure Generation",
+        description: "Proposal section tree and structure progress.",
+        sections: [{ title: "Proposal Sections", value: proposalSections }],
+        json: proposalSections,
+        preview: joinPreview(
+          proposalSections.map((section) => `${section.label}: ${section.status}`),
+          "No section structure yet.",
+        ),
+      },
+      deep_content_generation: {
+        title: "Deep Content Generation",
+        description: "Generated proposal sections and markdown content.",
+        sections: [{ title: "Sections", value: proposalResult?.sections }],
+        json: proposalResult?.sections,
+        preview: joinPreview(
+          Object.entries(proposalResult?.sections || {}).map(
+            ([key, value]) => `${key}: ${String(value || "").slice(0, 120)}`,
+          ),
+          "No proposal content generated yet.",
+        ),
+      },
+      consistency_check: {
+        title: "Consistency Check",
+        description: "Proposal and architecture consistency findings.",
+        sections: [
+          {
+            title: "Consistency Issues",
+            value:
+              result?.validation?.issues ||
+              proposalResult?.consistency?.issues ||
+              proposalResult?.issues,
+          },
+        ],
+        json:
+          result?.validation?.issues ||
+          proposalResult?.consistency?.issues ||
+          proposalResult?.issues,
+        preview: joinPreview(
+          result?.validation?.issues ||
+            proposalResult?.consistency?.issues ||
+            proposalResult?.issues,
+          "No consistency issues reported.",
+        ),
+      },
+      final_document_build: {
+        title: "Final Document Build",
+        description: "Rendered markdown and final document outputs.",
+        sections: [{ title: "Proposal Markdown", value: proposalMarkdown }],
+        json: proposalResult,
+        preview: proposalMarkdown || "No final markdown generated yet.",
+      },
+      results_overview: {
+        title: "Results",
+        description: "Aggregated analysis, architecture, proposal, and consistency outputs.",
+        sections: [
+          { title: "Analysis", value: resultsSummary.analysis },
+          { title: "Architecture", value: resultsSummary.architecture },
+          { title: "Proposal", value: resultsSummary.proposal },
+          { title: "Consistency", value: resultsSummary.consistency },
+        ],
+        json: resultsSummary,
+        preview:
+          proposalMarkdown ||
+          joinPreview(
+            [
+              resultsSummary.analysis.requirements,
+              resultsSummary.architecture.system,
+              resultsSummary.consistency,
+            ],
+            "No results available yet.",
+          ),
+      },
+    }),
+    [proposalMarkdown, proposalResult, proposalSections, result, resultsSummary],
+  );
+
+  const selectedDetail =
+    detailMap[selectedStepId] || detailMap.results_overview;
+
+  const handleSelectStep = (blockId, step) => {
+    setExpandedBlockId(blockId);
+    setSelectedStepId(step.id);
+    setActiveNav(blockId);
+    setDetailsTab("view");
+  };
+
+  const handleSelectNav = (navId) => {
+    setActiveNav(navId);
+    setDetailsTab("view");
+
+    if (navId === "results") {
+      setSelectedStepId(RESULTS_STEP.id);
+      return;
+    }
+
+    const targetBlock = mergedPipelineBlocks.find((block) => block.id === navId);
+    if (!targetBlock) {
+      return;
+    }
+
+    setExpandedBlockId(navId);
+    setSelectedStepId(targetBlock.steps[0]?.id || RESULTS_STEP.id);
+  };
+
   return (
-    <main className="page-shell">
+    <main className="page-shell dashboard-page">
       <div className="page-backdrop" />
+      <div className="dashboard-shell">
+        <aside className="dashboard-sidebar">
+          <div className="sidebar-brand">
+            <h1>Tender Architect</h1>
+            <p>Interactive control dashboard for the AI workflow.</p>
+          </div>
 
-      <div className="app-container">
-        <header className="hero-card">
-          <h1>Tender Architect</h1>
-          <p className="hero-subtitle">
-            AI-powered analysis of tender documentation
-          </p>
+          <div className="sidebar-meta">
           <div className={`health-banner ${backendStatus}`}>
-            <strong>Backend:</strong>{" "}
-            {backendStatus === "online"
-              ? backendStatusMessage
-              : backendStatus === "offline"
-                ? backendStatusMessage || `Offline at ${API_BASE_URL}`
-                : `Checking ${API_BASE_URL}`}
+            <strong>Backend:</strong> {backendStatus === "online"
+              ? backendStatusMessage || "Online"
+              : backendStatusMessage || "Offline"}
           </div>
-          <div className={`mode-banner ${aiMode}`}>
-            <strong>AI Mode:</strong>{" "}
-            {aiMode === "mock" ? "Mock" : aiMode === "live" ? "Live" : "Unknown"}
-          </div>
-        </header>
-
-        <div className="workspace-grid">
-          <div className="workspace-column workspace-column-left">
-            <section className="panel">
-              <div className="section-heading">
-                <div>
-                  <h2>Upload Area</h2>
-                  <p>Upload a PDF or DOCX TOR document.</p>
-                </div>
-              </div>
-
-              <FileDropZone file={selectedFile} onFileSelect={handleFileSelect} />
-            </section>
-
-            <section className="panel">
-              <div className="section-heading">
-                <div>
-                  <h2>Action Buttons</h2>
-                  <p>Upload the document, run analysis, then generate the proposal.</p>
-                </div>
-              </div>
-
-              <div className="action-row">
-                <button
-                  className="primary-button"
-                  type="button"
-                  onClick={handleUpload}
-                  disabled={!file || uploadStatus === "uploading"}
-                >
-                  {uploadStatus === "uploading" ? "Uploading..." : "Upload TOR"}
-                </button>
-
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={handleRunAnalysis}
-                  disabled={
-                    uploadStatus !== "uploaded" || analysisStatus === "running"
-                  }
-                >
-                  {analysisStatus === "running" ? "Running..." : "Run Analysis"}
-                </button>
-
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={handleGenerateProposal}
-                  disabled={
-                    analysisStatus !== "completed" ||
-                    proposalStatus === "running" ||
-                    !result
-                  }
-                >
-                  {proposalStatus === "running"
-                    ? "Generating Proposal..."
-                    : "Generate Technical Proposal"}
-                </button>
-              </div>
-
-              <div className="inline-control-row">
-                <label className="inline-field" htmlFor="proposal-language">
-                  Output Language
-                </label>
-                <select
-                  id="proposal-language"
-                  className="inline-select"
-                  value={proposalLanguage}
-                  onChange={(event) => setProposalLanguage(event.target.value)}
-                  disabled={proposalStatus === "running"}
-                >
-                  {PROPOSAL_LANGUAGES.map((language) => (
-                    <option key={language.value} value={language.value}>
-                      {language.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className={`status-banner ${statusTone}`}>
-                <strong>Upload:</strong> {uploadMessageMap[uploadStatus]}
-                <br />
-                <strong>Analysis:</strong> {analysisMessageMap[analysisStatus]}
-                <br />
-                <strong>Proposal:</strong> {proposalMessageMap[proposalStatus]}
-              </div>
-            </section>
-
-            <section className="panel">
-              <ResultsViewer result={result} />
-            </section>
+            <div className={`mode-banner ${aiMode.id}`}>
+              <strong>AI:</strong> {aiMode.label}
+            </div>
           </div>
 
-          <div className="workspace-column workspace-column-right">
-            <section className="panel">
-              <PipelineStatus pipelineSteps={pipelineSteps} />
-            </section>
-
-            <section className="panel">
-              <ProposalPipelineStatus proposalSteps={proposalSteps} />
-            </section>
-
-            <section className="panel">
-              <div className="subpanel">
-                <div className="section-heading compact">
-                  <div>
-                    <h2>Proposal Output</h2>
-                    <p>
-                      Generate the final technical proposal after the analysis
-                      artifacts are ready.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="empty-state">
-                  <strong>
-                    {proposalResult
-                      ? "Proposal sections generated."
-                      : "Technical proposal not generated yet."}
-                  </strong>
-                  <p>
-                    {proposalResult
-                      ? `The proposal markdown and DOCX are ready for download in ${
-                          proposalResult.language?.toUpperCase() ||
-                          proposalLanguage.toUpperCase()
-                        }.`
-                      : "Run the proposal pipeline to prepare the final technical proposal."}
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            <DownloadPanel
-              apiBaseUrl={API_BASE_URL}
-              isAnalysisReady={analysisStatus === "completed" && Boolean(result)}
-              isProposalReady={isProposalComplete}
-            />
+          <div className="sidebar-progress">
+            <div className="progress-copy">
+              <strong>Progress</strong>
+              <span>{progressPercent}%</span>
+            </div>
+            <div className="progress-track">
+              <div
+                className="progress-fill"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
           </div>
-        </div>
+
+          <section className="sidebar-panel">
+            <div className="section-heading compact">
+              <div>
+                <h2>Upload</h2>
+                <p>{filename || "Select a TOR document."}</p>
+              </div>
+            </div>
+            <FileDropZone file={selectedFile} onFileSelect={handleFileSelect} />
+            <div className="sidebar-actions">
+              <button
+                className="primary-button"
+                type="button"
+                onClick={handleUpload}
+                disabled={!file || uploadStatus === "running"}
+              >
+                {uploadStatus === "running" ? "Uploading..." : "Upload"}
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={handleRunAnalysis}
+                disabled={
+                  !filename ||
+                  analysisStatus === "running" ||
+                  uploadStatus === "running"
+                }
+              >
+                Run Analysis
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={handleGenerateProposal}
+                disabled={
+                  analysisStatus !== "completed" ||
+                  proposalStatus === "running" ||
+                  !result
+                }
+              >
+                Generate Proposal
+              </button>
+            </div>
+            <div className="inline-control-row sidebar-language">
+              <label className="inline-field" htmlFor="proposal-language">
+                Language
+              </label>
+              <select
+                id="proposal-language"
+                className="inline-select"
+                value={proposalLanguage}
+                onChange={(event) => setProposalLanguage(event.target.value)}
+                disabled={proposalStatus === "running"}
+              >
+                {PROPOSAL_LANGUAGES.map((language) => (
+                  <option key={language.value} value={language.value}>
+                    {language.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="status-banner compact">
+              <strong>Upload:</strong> {uploadMessage}
+              <br />
+              <strong>Analysis:</strong> {analysisMessage}
+              <br />
+              <strong>Proposal:</strong> {proposalMessage}
+            </div>
+          </section>
+
+          <nav className="sidebar-nav">
+            {NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`sidebar-nav-item ${activeNav === item.id ? "active" : ""}`}
+                onClick={() => handleSelectNav(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        <section className="dashboard-center">
+          <div className="center-header">
+            <h2>Workflow</h2>
+            <p>
+              One phase expanded at a time. Select a step to inspect its payload
+              on the right.
+            </p>
+          </div>
+          <div className="pipeline-blocks">
+            {mergedPipelineBlocks.map((block) => (
+              <PipelineBlock
+                key={block.id}
+                blockId={block.id}
+                description={block.description}
+                expanded={expandedBlockId === block.id}
+                onSelectStep={handleSelectStep}
+                onToggle={() =>
+                  setExpandedBlockId((current) =>
+                    current === block.id ? "" : block.id,
+                  )
+                }
+                selectedStepId={selectedStepId}
+                steps={block.steps}
+                title={block.title}
+              />
+            ))}
+          </div>
+        </section>
+
+        <aside className="dashboard-right">
+          <StepDetailsPanel
+            activeTab={detailsTab}
+            detail={selectedDetail}
+            onTabChange={setDetailsTab}
+          />
+          <DownloadPanel
+            apiBaseUrl={API_BASE_URL}
+            isAnalysisReady={analysisStatus === "completed" && Boolean(result)}
+            isMarkdownReady={Boolean(proposalMarkdown)}
+            isProposalReady={proposalStatus === "completed" && Boolean(proposalResult)}
+            onViewMarkdown={() => {
+              setSelectedStepId("final_document_build");
+              setActiveNav("results");
+              setDetailsTab("preview");
+            }}
+          />
+        </aside>
       </div>
     </main>
   );
 }
+
+export default AnalyzeTender;

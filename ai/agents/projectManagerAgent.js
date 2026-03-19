@@ -3,7 +3,7 @@ const path = require("path");
 const runPrompt = require("../pipelines/runPrompt");
 
 const promptExists = (filename) =>
-  fs.existsSync(path.join(__dirname, "..", "prompts", filename));
+  fs.existsSync(path.join(__dirname, "..", "skills", filename));
 
 const extractSection = (markdown, heading) => {
   const lines = String(markdown || "").split("\n");
@@ -82,8 +82,8 @@ async function projectManagerAgent({
   estimation,
   language = "ua",
 }) {
-  const rawProjectPlan = promptExists("project_manager.md")
-    ? await runPrompt("project_manager.md", {
+  const rawProjectPlan = promptExists("planning/project-manager.md")
+    ? await runPrompt("planning/project-manager.md", {
         architecture,
         pbs,
         estimation,

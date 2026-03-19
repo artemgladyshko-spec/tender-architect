@@ -1,125 +1,153 @@
-const normalizeText = (value) => String(value || "").trim();
+function safeArray(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  return [value];
+}
 
-const splitLines = (value) =>
-  normalizeText(value)
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+function unique(arr) {
+  return [...new Set(arr.filter(Boolean))];
+}
 
-const extractBulletItems = (value) =>
-  splitLines(value)
-    .filter((line) => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
-    .map((line) => line.replace(/^[-*]\s+/, "").replace(/^\d+\.\s+/, "").trim());
+function buildArchitectureContext(input = {}) {
+  const {
+    requirements = {},
+    system = {},
+    pbs = {},
+    dependencies = [],
+    patterns = {},
+    domainModel = {},
+    architecture = {},
+    api = {},
+    database = {},
+    validation = {},
+  } = input;
 
-const extractInlineList = (value) =>
-  normalizeText(value)
-    .split(/[:,]/)
-    .slice(1)
-    .join(":")
-    .split(/[;,]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  // =========================
+  // SYSTEM
+  // =========================
+  const systemPurpose =
+    system?.purpose ||
+    requirements?.summary ||
+    "System purpose derived from tender requirements.";
 
-const uniqueItems = (items) => [...new Set(items.filter(Boolean))];
+  const actors = unique([
+    ...(system?.actors || []),
+    ...(requirements?.actors || []),
+  ]);
 
-const collectItems = (...sources) =>
-  uniqueItems(
-    sources.flatMap((source) => [
-      ...extractBulletItems(source),
-      ...extractInlineList(source),
-    ]),
+  // =========================
+  // CORE STRUCTURE
+  // =========================
+  const modules = unique([
+    ...(pbs?.modules || []),
+    ...(pbs?.items || []),
+  ]);
+
+  const coreServices = unique([
+    ...(architecture?.services || []),
+    ...(system?.services || []),
+  ]);
+
+  const coreDomains = unique([
+    ...(domainModel?.domains || []),
+    ...(system?.domains || []),
+  ]);
+
+  // =========================
+  // DATA
+  // =========================
+  const dataEntities = unique([
+    ...(domainModel?.entities || []),
+  ]);
+
+  const databases = unique([
+    ...(database?.databases || []),
+  ]);
+
+  // =========================
+  // INTEGRATIONS
+  // =========================
+  const integrations = unique([
+    ...(api?.integrations || []),
+    ...(system?.integrations || []),
+  ]);
+
+  // =========================
+  // INFRASTRUCTURE
+  // =========================
+  const infrastructure = {
+    runtime:
+      architecture?.runtime ||
+      system?.runtime ||
+      "Defined in architecture design",
+
+    deploymentModel:
+      system?.deployment ||
+      "Defined in implementation plan",
+
+    scalability:
+      requirements?.scalability ||
+      "Derived from non-functional requirements",
+
+    highAvailability:
+      system?.availability ||
+      "High availability strategy to be defined",
+  };
+
+  // =========================
+  // SECURITY (PATTERN-AWARE 🔥)
+  // =========================
+  const detectedPatterns =
+    patterns?.detected_patterns || patterns || [];
+
+  const hasRBAC = detectedPatterns.some((p) =>
+    p.toLowerCase().includes("rbac")
   );
 
-const takeFirstSentence = (value, fallback = "") => {
-  const text = normalizeText(value);
+  const hasAudit = detectedPatterns.some((p) =>
+    p.toLowerCase().includes("audit")
+  );
 
-  if (!text) {
-    return fallback;
-  }
+  const security = {
+    authentication:
+      system?.security?.authentication || "Authentication required",
 
-  const match = text.match(/(.+?[.!?])(\s|$)/);
-  return match ? match[1].trim() : text.slice(0, 240).trim();
-};
+    authorization: hasRBAC
+      ? "RBAC enforced (Role-Based Access Control)"
+      : "Authorization model to be defined",
 
-function buildArchitectureContext(analysisResults = {}) {
-  const requirements = analysisResults.requirements || "";
-  const actors = analysisResults.actors || "";
-  const architecturePatterns =
-    analysisResults.architecturePatterns ||
-    analysisResults.architecture_patterns ||
-    analysisResults.patterns ||
-    "";
-  const pbs = analysisResults.pbs || "";
-  const domainModel =
-    analysisResults.domainModel ||
-    analysisResults.domain_model ||
-    analysisResults.domain ||
-    "";
-  const architecture = analysisResults.architecture || "";
-  const database = analysisResults.database || "";
-  const api = analysisResults.api || "";
-  const traceability = analysisResults.traceability || "";
-  const estimation = analysisResults.estimation || "";
-  const projectPlan =
-    analysisResults.projectPlan ||
-    analysisResults.project_plan ||
-    analysisResults.projectPlanDetails ||
-    "";
+    encryption:
+      system?.security?.encryption ||
+      "Encryption required for data in transit and at rest",
 
+    auditing: hasAudit
+      ? "Audit logging required (immutable audit trail)"
+      : "Audit requirements to be defined",
+  };
+
+  // =========================
+  // RETURN CONTEXT
+  // =========================
   return {
-    systemPurpose: takeFirstSentence(
-      requirements,
-      "System purpose to be refined from analysis results.",
-    ),
-    stakeholders: collectItems(actors, requirements),
-    actors: collectItems(actors),
-    architectureStyle: takeFirstSentence(
-      architecturePatterns || architecture,
-      "Layered enterprise architecture.",
-    ),
-    coreServices: collectItems(architecture, pbs, api),
-    modules: collectItems(pbs, architecture),
-    integrations: collectItems(api, traceability, requirements),
-    dataEntities: collectItems(domainModel),
-    databases: collectItems(database),
-    infrastructure: {
-      runtime: takeFirstSentence(
-        architecture,
-        "Application runtime to be refined from architecture outputs.",
-      ),
-      deploymentModel: takeFirstSentence(
-        projectPlan || architecture,
-        "Deployment model to be defined during technical design.",
-      ),
-      scalability: takeFirstSentence(
-        requirements,
-        "Scalability requirements to be confirmed from non-functional requirements.",
-      ),
-      highAvailability: takeFirstSentence(
-        architecture || requirements,
-        "High-availability approach to be defined from infrastructure constraints.",
-      ),
-    },
-    security: {
-      authentication: takeFirstSentence(
-        requirements,
-        "Authentication requirements to be derived from the security analysis.",
-      ),
-      authorization: takeFirstSentence(
-        actors || requirements,
-        "Authorization model to be aligned with stakeholder roles.",
-      ),
-      encryption: takeFirstSentence(
-        requirements,
-        "Encryption requirements to be derived from the security and compliance sections.",
-      ),
-      auditing: takeFirstSentence(
-        traceability || requirements,
-        "Auditing requirements to be aligned with traceability and compliance outputs.",
-      ),
-    },
-    projectPhases: collectItems(projectPlan, estimation),
-    deliverables: collectItems(pbs, projectPlan),
+    systemPurpose,
+    actors,
+
+    coreDomains,
+    coreServices,
+    modules,
+
+    integrations,
+
+    dataEntities,
+    databases,
+
+    infrastructure,
+    security,
+
+    patterns: detectedPatterns,
+    dependencies,
+
+    validation, // pass-through for later stages
   };
 }
 

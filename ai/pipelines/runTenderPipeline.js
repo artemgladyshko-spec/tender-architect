@@ -1,148 +1,267 @@
-const fs = require("fs");
-const path = require("path");
 const analyzerAgent = require("../agents/analyzerAgent");
+const contractAnalysisAgent = require("../agents/contractAnalysisAgent");
+const systemThinkingAgent = require("../agents/systemThinkingAgent");
+const architecturePatternAgent = require("../agents/architecturePatternAgent");
+
+const pbsAgent = require("../agents/pbsAgent");
+const dependencyMapper = require("../agents/dependencyMapper");
+
 const architectAgent = require("../agents/architectAgent");
+const validationAgent = require("../agents/validationAgent");
+
 const estimatorAgent = require("../agents/estimatorAgent");
 const projectManagerAgent = require("../agents/projectManagerAgent");
 const proposalAgent = require("../agents/proposalAgent");
+
 const runPrompt = require("./runPrompt");
 
-const rootDir = path.resolve(__dirname, "..", "..");
-const analysisDir = path.join(rootDir, "data", "outputs", "analysis");
+// 🔥 NEW: unified model
+const buildUnifiedModel = require("../core/buildUnifiedModel");
 
-const saveJson = (filename, value) => {
-  fs.mkdirSync(analysisDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(analysisDir, filename),
-    JSON.stringify(value, null, 2),
-    "utf8",
-  );
-};
+async function runTenderPipeline(input, options = {}) {
+  const { onStatusUpdate } = options;
 
-const createStatusTracker = (onStatusUpdate) => {
-  const pipelineStatus = [];
-
-  const updateStatus = (step, status) => {
-    const entry = {
-      step,
-      status,
-      updatedAt: new Date().toISOString(),
-    };
-
-    pipelineStatus.push(entry);
-    console.log(`[Pipeline] ${step}: ${status}`);
-
-    if (typeof onStatusUpdate === "function") {
-      onStatusUpdate(entry, [...pipelineStatus]);
+  const update = (step, status) => {
+    if (onStatusUpdate) {
+      onStatusUpdate({ step, status });
     }
   };
 
-  return {
-    pipelineStatus,
-    updateStatus,
-  };
-};
-
-async function runTenderPipeline(input, options = {}) {
-  const results = {};
-  const documentText = input.tor || "";
-  const language = input.language === "en" ? "en" : "ua";
-  const { pipelineStatus, updateStatus } = createStatusTracker(
-    options.onStatusUpdate,
-  );
-
   try {
-    updateStatus("analyzerAgent", "running");
-    const analysis = await analyzerAgent(documentText, language);
-    results.requirements = analysis.requirements;
-    results.actors = analysis.actors;
-    results.patterns = analysis.architecturePatterns;
-    results.architecturePatterns = analysis.architecturePatterns;
-    saveJson("sections.json", analysis.sections);
-    saveJson("chunks.json", analysis.chunks);
-    updateStatus("analyzerAgent", "completed");
+    // =========================
+    // 1. ANALYSIS
+    // =========================
+    update("analyzerAgent", "running");
 
-    updateStatus("pbsGenerator", "running");
-    results.pbs = await runPrompt("pbs_generator.md", {
-      requirements: results.requirements,
-      actors: results.actors,
-      architecturePatterns: results.architecturePatterns,
-      language,
+    const analysis = await analyzerAgent({
+      tor: input.tor,
     });
-    updateStatus("pbsGenerator", "completed");
 
-    updateStatus("architectAgent", "running");
-    const architectureOutput = await architectAgent({
-      requirements: results.requirements,
-      actors: results.actors,
-      architecturePatterns: results.architecturePatterns,
-      pbs: results.pbs,
-      language,
+    update("analyzerAgent", "done");
+
+    // =========================
+    // 2. CONTRACT ANALYSIS
+    // =========================
+    update("contractAnalysisAgent", "running");
+
+    const contract = await contractAnalysisAgent({
+      attachments: input.attachments || [],
     });
-    results.domain = architectureOutput.domainModel;
-    results.domainModel = architectureOutput.domainModel;
-    results.architecture = architectureOutput.architecture;
-    results.database = architectureOutput.database;
-    results.api = architectureOutput.api;
-    updateStatus("architectAgent", "completed");
 
-    updateStatus("traceabilityMapper", "running");
-    results.traceability = await runPrompt("traceability_mapper.md", {
-      requirements: results.requirements,
-      pbs: results.pbs,
-      architecture: results.architecture,
-      api: results.api,
-      database: results.database,
-      language,
+    update("contractAnalysisAgent", "done");
+
+    // =========================
+    // 3. SYSTEM THINKING
+    // =========================
+    update("systemThinkingAgent", "running");
+
+    const systemModel = await systemThinkingAgent({
+      requirements: analysis.requirements,
+      integrations: analysis.integrations,
+      actors: analysis.actors,
+      constraints: analysis.constraints,
+      contract,
     });
-    updateStatus("traceabilityMapper", "completed");
 
-    updateStatus("estimatorAgent", "running");
-    const estimationOutput = await estimatorAgent({
-      pbs: results.pbs,
-      architecture: results.architecture,
-      api: results.api,
-      database: results.database,
-      language,
+    update("systemThinkingAgent", "done");
+
+    // =========================
+    // 3.5 PATTERN DETECTION 🔥
+    // =========================
+    update("architecturePatternAgent", "running");
+
+    const patterns = await architecturePatternAgent({
+      requirements: analysis.requirements,
+      system: systemModel,
     });
-    results.estimation = estimationOutput.raw;
-    results.estimationDetails = estimationOutput;
-    updateStatus("estimatorAgent", "completed");
 
-    updateStatus("projectManagerAgent", "running");
-    const projectPlanOutput = await projectManagerAgent({
-      architecture: results.architecture,
-      pbs: results.pbs,
-      estimation: results.estimation,
-      language,
+    update("architecturePatternAgent", "done");
+
+    // =========================
+    // 4. PBS
+    // =========================
+    update("pbsAgent", "running");
+
+    const pbs = await pbsAgent({
+      requirements: analysis.requirements,
+      system: systemModel,
+      patterns,
     });
-    results.projectPlan = projectPlanOutput.raw;
-    results.projectPlanDetails = projectPlanOutput;
-    updateStatus("projectManagerAgent", "completed");
 
-    updateStatus("proposalAgent", "running");
-    results.proposal = await proposalAgent({
-      requirements: results.requirements,
-      actors: results.actors,
-      architecturePatterns: results.architecturePatterns,
-      pbs: results.pbs,
-      domainModel: results.domainModel,
-      architecture: results.architecture,
-      database: results.database,
-      api: results.api,
-      traceability: results.traceability,
-      estimation: results.estimation,
-      estimationDetails: results.estimationDetails,
-      projectPlan: results.projectPlan,
-      projectPlanDetails: results.projectPlanDetails,
-      language,
+    update("pbsAgent", "done");
+
+    // =========================
+    // 5. DEPENDENCIES
+    // =========================
+    update("dependencyMapper", "running");
+
+    const dependencies = await dependencyMapper({
+      pbs,
     });
-    updateStatus("proposalAgent", "completed");
 
-    results.pipelineStatus = pipelineStatus;
-    return results;
+    update("dependencyMapper", "done");
+
+    // =========================
+    // 6. ARCHITECTURE
+    // =========================
+    update("architectAgent", "running");
+
+    const architectureResult = await architectAgent({
+      requirements: analysis,
+      system: systemModel,
+      pbs,
+      dependencies,
+      patterns,
+    });
+
+    update("architectAgent", "done");
+
+    const {
+      domainModel,
+      architecture,
+      database,
+      api,
+      orchestration,
+    } = architectureResult;
+
+    // =========================
+    // 7. VALIDATION
+    // =========================
+    update("validationAgent", "running");
+
+    const validation = await validationAgent({
+      system: systemModel,
+      pbs,
+      dependencies,
+      domainModel,
+      architecture,
+      api,
+      patterns, // 🔥 IMPORTANT
+    });
+
+    update("validationAgent", "done");
+
+    // =========================
+    // 8. TRACEABILITY
+    // =========================
+    update("traceabilityMapper", "running");
+
+    const traceability = await runPrompt(
+      "modeling/traceability-mapper.md",
+      {
+        requirements: JSON.stringify(analysis.requirements),
+        pbs: JSON.stringify(pbs),
+        patterns: JSON.stringify(patterns),
+      }
+    );
+
+    update("traceabilityMapper", "done");
+
+    // =========================
+    // 9. ESTIMATION
+    // =========================
+    update("estimatorAgent", "running");
+
+    const estimation = await estimatorAgent({
+      pbs,
+      dependencies,
+      system: systemModel,
+      patterns,
+    });
+
+    update("estimatorAgent", "done");
+
+    // =========================
+    // 10. PROJECT PLAN
+    // =========================
+    update("projectManagerAgent", "running");
+
+    const projectPlan = await projectManagerAgent({
+      pbs,
+      dependencies,
+      estimation,
+      contract,
+      patterns,
+    });
+
+    update("projectManagerAgent", "done");
+
+    // =========================
+    // 🔥 11. BUILD UNIFIED MODEL (CRITICAL STEP)
+    // =========================
+    const unifiedModel = buildUnifiedModel({
+      analysis,
+      contract,
+      system: systemModel,
+      pbs,
+      dependencies,
+      domainModel,
+      architecture,
+      database,
+      api,
+      validation,
+    });
+
+    // =========================
+    // 12. PROPOSAL (NOW BASED ON MODEL)
+    // =========================
+    update("proposalAgent", "running");
+
+    const proposal = await proposalAgent({
+      unifiedModel, // 🔥 MAIN SOURCE
+      language: input.language || "ua",
+      patterns,
+    });
+
+    update("proposalAgent", "done");
+
+    // =========================
+    // RESULT
+    // =========================
+    return {
+      // analysis
+      requirements: analysis.requirements,
+      nonFunctional: analysis.nonFunctional,
+      integrations: analysis.integrations,
+      actors: analysis.actors,
+      constraints: analysis.constraints,
+
+      // contract + system
+      contract,
+      system: systemModel,
+
+      // patterns
+      patterns,
+
+      // modeling
+      pbs,
+      dependencies,
+
+      // architecture
+      domainModel,
+      architecture,
+      database,
+      api,
+
+      // orchestration debug
+      orchestration,
+
+      // validation
+      validation,
+
+      // planning
+      traceability,
+      estimation,
+      projectPlan,
+
+      // 🔥 unified model (важливо для дебагу)
+      unifiedModel,
+
+      // final document
+      proposal,
+    };
   } catch (error) {
-    updateStatus("pipeline", "failed");
+    update("pipeline", "failed");
     throw error;
   }
 }
